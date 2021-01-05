@@ -179,8 +179,8 @@ FileWriter::FileWriter(const char* path) {
 	m_buf = std::make_unique<uint8_t[]>(BUFSZ);
 }
 FileWriter::~FileWriter() noexcept {
-	_flush();
 	if (m_fd >= 0) {
+		_flush();
 		::close(m_fd);
 	}
 }
@@ -189,6 +189,16 @@ bool FileWriter::operator!() const noexcept {
 }
 
 bool FileWriter::_write(const void* data, size_t n) noexcept {
+	constexpr size_t block = 16*1024*1024;
+	while (n > block) {
+		if (::write(m_fd, data, block) != block) {
+			::close(m_fd);
+			m_fd = -1;
+			return false;
+		}
+		n -= block;
+		data = (uint8_t*)data + block;
+	}
 	if (::write(m_fd, data, n) != n) {
 		::close(m_fd);
 		m_fd = -1;
@@ -198,14 +208,14 @@ bool FileWriter::_write(const void* data, size_t n) noexcept {
 }
 
 bool FileWriter::flush() noexcept {
+	if (m_fd < 0) {
+		return false;
+	}
 	return _flush();
 }
 bool FileWriter::_flush() noexcept {
 	if (m_off == 0) {
 		return true;
-	}
-	if (m_fd < 0) {
-		return false;
 	}
 	auto n = m_off;
 	m_off = 0;
@@ -228,17 +238,7 @@ bool FileWriter::write(const void* data, size_t n) noexcept {
 		m_off = n - m;
 		memcpy(m_buf.get(), (const uint8_t*)data+m, m_off);
 	} else {
-		_flush();
-		constexpr size_t block = 16*1024*1024;
-		static_assert(block > BUFSZ*64, "block should be large enough");
-		while (n > block) {
-			if (!_write(data, block)) {
-				return false;
-			}
-			n -= block;
-			data = (uint8_t*)data + block;
-		}
-		return _write(data, n);
+		return _flush() && _write(data, n);
 	}
 	return true;
 }
