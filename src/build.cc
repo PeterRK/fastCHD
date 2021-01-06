@@ -161,43 +161,89 @@ static size_t SumInputSize(const DataReaders& in) {
 	return total;
 }
 
-struct L1Mark {
-	uint32_t val;
-	uint32_t idx;
-};
-static NOINLINE uint32_t L1SortMarking(V96 ids[], uint32_t total, const Divisor<uint32_t>& l1sz, L1Mark table[]) {
-	for (uint32_t i = 0; i < l1sz.value(); i++) {
-		table[i] = {0, i};
+template <typename Hash, typename Offset, typename Border>
+static FORCE_INLINE void Shuffle(V96 ids[], uint32_t parts,
+								 const Hash& hash, const Offset& offset, const Border& border, bool prefetch=true) {
+	auto prefetch4 = [ids, prefetch](size_t k) {
+		if (prefetch && (k & 3UL) == 0) {
+			PrefetchForFuture(&ids[k+4]);
+		}
+	};
+	for (uint32_t p = 0; p < parts; p++) {
+		while (offset(p) < border(p)) {
+			auto i = offset(p);
+			auto q = hash(ids[i]);
+			if (q == p) {
+				offset(p)++;
+				continue;
+			}
+			prefetch4(i);
+			auto tmp = ids[i];
+			do {
+				size_t j;
+				uint32_t qx;
+				do {
+					j = offset(q)++;
+					qx = hash(ids[j]);
+				} while (qx == q);
+				q = qx;
+				prefetch4(j);
+				std::swap(tmp, ids[j]);
+			} while (q != p);
+			offset(p)++;
+			ids[i] = tmp;
+		}
 	}
-	uint32_t max = 0;
-	if (total < MINI_BATCH) {
-		for (uint32_t i = 0; i < total; i++) {
-			auto tmp = ++table[L1Hash(ids[i]) % l1sz].val;
+}
+
+template <typename SizeT, typename Slot>
+static FORCE_INLINE SizeT Counting(V96 ids[], SizeT total, const Slot& slot, bool prefetch=true) {
+	SizeT max = 0;
+	if (!prefetch || total < MINI_BATCH) {
+		for (SizeT i = 0; i < total; i++) {
+			auto tmp = ++slot(ids[i]);
 			if (tmp > max) max = tmp;
 		}
 	} else {
 		static_assert((MINI_BATCH&(MINI_BATCH-1)) == 0);
-		typedef uint32_t* Pointer;
-		Pointer pcnt[MINI_BATCH];
-		for (unsigned i = 0; i < MINI_BATCH; i++) {
-			pcnt[i] = &table[L1Hash(ids[i]) % l1sz].val;
+		constexpr size_t batch = MINI_BATCH;
+		constexpr size_t mask = MINI_BATCH-1;
+		typedef SizeT* Pointer;
+		Pointer pcnt[batch];
+		for (size_t i = 0; i < batch; i++) {
+			pcnt[i] = &slot(ids[i]);
 			PrefetchForNext(pcnt[i]);
 		}
-		for (unsigned i = MINI_BATCH; i < total; i++) {
-			auto j = i & (MINI_BATCH-1);
+		for (size_t i = batch; i < total; i++) {
+			auto j = i & mask;
 			auto tmp = ++(*pcnt[j]);
 			if (tmp > max) max = tmp;
-			pcnt[j] = &table[L1Hash(ids[i]) % l1sz].val;
+			pcnt[j] = &slot(ids[i]);
 			PrefetchForNext(pcnt[j]);
 		}
-		for (unsigned i = total; i < total+MINI_BATCH; i++) {
-			auto j = i & (MINI_BATCH-1);
+		for (size_t i = total; i < total+batch; i++) {
+			auto j = i & mask;
 			auto tmp = ++(*pcnt[j]);
 			if (tmp > max) max = tmp;
 		}
 	}
 	return max;
+
+struct L1Mark {
+	uint32_t val;
+	uint32_t idx;
+};
+
+static NOINLINE uint32_t L1SortMarking(V96 ids[], uint32_t total, const Divisor<uint32_t>& l1sz, L1Mark table[]) {
+	for (uint32_t i = 0; i < l1sz.value(); i++) {
+		table[i] = {0, i};
+	}
+	return Counting(ids, total,
+					[l1sz, table](const V96& id)->uint32_t& {
+						return table[L1Hash(id) % l1sz].val;
+					});
 }
+
 static NOINLINE L1Mark* L1SortReorder(uint32_t max, unsigned n, L1Mark table[], L1Mark temp[]) {
 	Assert(n > 0);
 	uint32_t memo[256];
@@ -229,36 +275,29 @@ static NOINLINE L1Mark* L1SortReorder(uint32_t max, unsigned n, L1Mark table[], 
 	}
 	return temp;
 }
+
 static NOINLINE void L1SortShuffle(V96 ids[], const Divisor<uint32_t>& l1sz, L1Mark range[]) {
-	//TODO: can be faster?
-	for (uint32_t p = 0; p < l1sz.value(); p++) {
-		while (range[p].idx < range[p].val) {
-			auto i = range[p].idx;
-			auto q = L1Hash(ids[i]) % l1sz;
-			if (q == p) {
-				range[p].idx++;
-				continue;
-			}
-			auto tmp = ids[i];
-			do {
-				auto j = range[q].idx++;
-				q = L1Hash(ids[j]) % l1sz;
-				std::swap(tmp, ids[j]);
-			} while (q != p);
-			range[p].idx++;
-			ids[i] = tmp;
-		}
-	}
+	Shuffle(ids, l1sz.value(),
+			[l1sz](const V96& id)->uint32_t {
+				return L1Hash(id) % l1sz;
+			},
+			[range](uint32_t i)->uint32_t& {
+				return range[i].idx;
+			},
+			[range](uint32_t i)->uint32_t {
+				return range[i].val;
+			},
+			false);
 }
+
 static bool L1Sort(V96 ids[], uint32_t total, const Divisor<uint32_t>& l1sz) {
 	ALLOC_MEM_BLOCK(mem, ((size_t)l1sz.value()) * sizeof(L1Mark) * 2)
-
 	auto max = L1SortMarking(ids, total, l1sz, (L1Mark*)mem.addr());
 	if (max > std::min(l1sz.value()+16U, (uint32_t)UINT16_MAX)) {
 		return false;
 	}
 	auto range = L1SortReorder(max, l1sz.value(), (L1Mark*)mem.addr(), (L1Mark*)mem.addr()+l1sz.value());
-	L1SortShuffle(ids, l1sz, range);
+	L1SortShuffle(ids, l1sz, range);	//TODO: can be faster?
 	return true;
 }
 
@@ -367,37 +406,17 @@ static BuildStatus Build(V96 ids[], std::vector<size_t>& shuffle, std::vector<In
 		border[i] = off;
 	}
 
-	auto prefetch4 = [ids](size_t k) {
-		if ((k & 3UL) == 0) {
-			PrefetchForFuture(&ids[k+4]);
-		}
-	};
 	auto spot1 = std::chrono::steady_clock::now();
-	for (unsigned p = 0; p < n; p++) {
-		while (shuffle[p] < border[p]) {
-			auto i = shuffle[p];
-			auto q = L0Hash(ids[i]) % l0sz;
-			if (q == p) {
-				shuffle[p]++;
-				continue;
-			}
-			prefetch4(i);
-			auto tmp = ids[i];
-			do {
-				size_t j;
-				uint32_t qx;
-				do {
-					j = shuffle[q]++;
-					qx = L0Hash(ids[j]) % l0sz;
-				} while (qx == q);
-				q = qx;
-				prefetch4(j);
-				std::swap(tmp, ids[j]);
-			} while (q != p);
-			shuffle[p]++;
-			ids[i] = tmp;
-		}
-	}
+	Shuffle(ids, n,
+			[l0sz](const V96& id)->uint16_t {
+				return L0Hash(id) % l0sz;
+			},
+			[&shuffle](uint16_t i)->size_t& {
+				return shuffle[i];
+			},
+			[&border](uint16_t i)->size_t {
+				return border[i];
+			});
 	auto spot2 = std::chrono::steady_clock::now();
 	auto status = Build(ids, out);
 	auto spot3 = std::chrono::steady_clock::now();
