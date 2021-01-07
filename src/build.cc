@@ -196,6 +196,55 @@ static FORCE_INLINE void Shuffle(V96 ids[], uint32_t parts,
 	}
 }
 
+template <typename SizeT, typename Offset>
+static FORCE_INLINE void Shuffle(V96 ids[], V96 shadow[], SizeT total, const Offset& offset) {
+	if (total < MINI_BATCH*2) {
+		for (SizeT i = 0; i < total; i++) {
+			shadow[offset(ids[i])++] = ids[i];
+		}
+	} else {
+		static_assert((MINI_BATCH&(MINI_BATCH-1)) == 0);
+		constexpr size_t batch = MINI_BATCH;
+		constexpr size_t mask = MINI_BATCH-1;
+
+		struct {
+			SizeT* poff;
+			V96* pout;
+		} state[batch];
+
+		for (size_t i = 0; i < batch; i++) {
+			auto& c = state[i];
+			c.poff = &offset(ids[i]);
+			PrefetchForNext(c.poff);
+		}
+		for (size_t i = batch; i < batch*2; i++) {
+			auto& c = state[i & mask];
+			c.pout = &shadow[(*c.poff)++];
+			PrefetchForNext(c.pout);
+			c.poff = &offset(ids[i]);
+			PrefetchForNext(c.poff);
+		}
+		for (size_t i = batch*2; i < total; i++) {
+			auto& c = state[i & mask];
+			*c.pout = ids[i-batch*2];
+			c.pout = &shadow[(*c.poff)++];
+			PrefetchForNext(c.pout);
+			c.poff = &offset(ids[i]);
+			PrefetchForNext(c.poff);
+		}
+		for (size_t i = total; i < total+batch; i++) {
+			auto& c = state[i & mask];
+			*c.pout = ids[i-batch*2];
+			c.pout = &shadow[(*c.poff)++];
+			PrefetchForNext(c.pout);
+		}
+		for (size_t i = total+batch; i < total+batch*2; i++) {
+			auto& c = state[i & mask];
+			*c.pout = ids[i-batch*2];
+		}
+	}
+}
+
 template <typename SizeT, typename Slot>
 static FORCE_INLINE SizeT Counting(V96 ids[], SizeT total, const Slot& slot, bool prefetch=true) {
 	SizeT max = 0;
@@ -228,6 +277,7 @@ static FORCE_INLINE SizeT Counting(V96 ids[], SizeT total, const Slot& slot, boo
 		}
 	}
 	return max;
+}
 
 struct L1Mark {
 	uint32_t val;
@@ -290,22 +340,36 @@ static NOINLINE void L1SortShuffle(V96 ids[], const Divisor<uint32_t>& l1sz, L1M
 			false);
 }
 
-static bool L1Sort(V96 ids[], uint32_t total, const Divisor<uint32_t>& l1sz) {
+static NOINLINE void L1SortShuffle(V96 ids[], V96 shadow[], uint32_t total,
+								   const Divisor<uint32_t>& l1sz, L1Mark range[]) {
+	Shuffle(ids, shadow, total,
+			[l1sz, range](const V96& id)->uint32_t& {
+				return range[L1Hash(id) % l1sz].idx;
+			});
+}
+
+static V96* L1Sort(V96 ids[], V96 shadow[], uint32_t total, const Divisor<uint32_t>& l1sz) {
 	ALLOC_MEM_BLOCK(mem, ((size_t)l1sz.value()) * sizeof(L1Mark) * 2)
 	auto max = L1SortMarking(ids, total, l1sz, (L1Mark*)mem.addr());
 	if (max > std::min(l1sz.value()+16U, (uint32_t)UINT16_MAX)) {
-		return false;
+		return nullptr;
 	}
 	auto range = L1SortReorder(max, l1sz.value(), (L1Mark*)mem.addr(), (L1Mark*)mem.addr()+l1sz.value());
-	L1SortShuffle(ids, l1sz, range);	//TODO: can be faster?
-	return true;
+	if (shadow == nullptr) {
+		L1SortShuffle(ids, l1sz, range);
+		return ids;
+	} else {
+		L1SortShuffle(ids, shadow, total, l1sz, range);
+		return shadow;
+	}
 }
 
-static NOINLINE BuildStatus Build(V96 ids[], IndexPiece& out) {
+static NOINLINE BuildStatus Build(V96 ids[], V96 shadow[], IndexPiece& out) {
 	const Divisor<uint32_t> l1sz(L1Size(out.size));
 	const Divisor<uint64_t> l2sz(L2Size(out.size));
 
-	if (!L1Sort(ids, out.size, l1sz)) {
+	ids = L1Sort(ids, shadow, out.size, l1sz);
+	if (ids == nullptr) {
 		return BUILD_STATUS_CONFLICT;
 	};
 
@@ -360,16 +424,16 @@ static NOINLINE BuildStatus Build(V96 ids[], IndexPiece& out) {
 	return BUILD_STATUS_OK;
 }
 
-static BuildStatus Build(V96 ids[], std::vector<IndexPiece>& out) {
+static BuildStatus Build(V96 ids[], V96 shadow[], std::vector<IndexPiece>& out) {
 	std::vector<std::thread> threads;
 	threads.reserve(out.size());
 	std::vector<BuildStatus> part_status(out.size());
 
 	size_t off = 0;
 	for (unsigned i = 0; i < out.size(); i++) {
-		threads.emplace_back([](V96 ids[], IndexPiece* piece, BuildStatus* status) {
-			*status = Build(ids, *piece);
-		}, ids+off, &out[i], &part_status[i]);
+		threads.emplace_back([](V96 ids[], V96 shadow[], IndexPiece* piece, BuildStatus* status) {
+			*status = Build(ids, shadow, *piece);
+		}, ids+off, shadow!=nullptr? shadow+off : nullptr, &out[i], &part_status[i]);
 		off += out[i].size;
 	}
 	for (auto& t : threads) {
@@ -386,7 +450,7 @@ static BuildStatus Build(V96 ids[], std::vector<IndexPiece>& out) {
 	return status;
 }
 
-static BuildStatus Build(V96 ids[], std::vector<size_t>& shuffle, std::vector<IndexPiece>& out) {
+static BuildStatus Build(V96 ids[], V96 shadow[], std::vector<size_t>& shuffle, std::vector<IndexPiece>& out) {
 	const uint32_t n = shuffle.size();
 	Assert(n > 1 && n <= MAX_SEGMENT);
 	const Divisor<uint16_t> l0sz(n);
@@ -407,18 +471,26 @@ static BuildStatus Build(V96 ids[], std::vector<size_t>& shuffle, std::vector<In
 	}
 
 	auto spot1 = std::chrono::steady_clock::now();
-	Shuffle(ids, n,
-			[l0sz](const V96& id)->uint16_t {
-				return L0Hash(id) % l0sz;
-			},
-			[&shuffle](uint16_t i)->size_t& {
-				return shuffle[i];
-			},
-			[&border](uint16_t i)->size_t {
-				return border[i];
-			});
+	if (shadow == nullptr) {
+		Shuffle(ids, n,
+				[l0sz](const V96& id)->uint16_t {
+					return L0Hash(id) % l0sz;
+				},
+				[&shuffle](uint16_t i)->size_t& {
+					return shuffle[i];
+				},
+				[&border](uint16_t i)->size_t {
+					return border[i];
+				});
+	} else {
+		Shuffle(ids, shadow, off,
+				[l0sz, &shuffle](const V96& id)->size_t& {
+					return shuffle[L0Hash(id) % l0sz];
+				});
+		std::swap(ids, shadow);
+	}
 	auto spot2 = std::chrono::steady_clock::now();
-	auto status = Build(ids, out);
+	auto status = Build(ids, shadow, out);
 	auto spot3 = std::chrono::steady_clock::now();
 	if (g_trace_build_time) {
 		Logger::Printf("partition: %.3fs\n", DurationS(spot1, spot2));
@@ -427,12 +499,13 @@ static BuildStatus Build(V96 ids[], std::vector<size_t>& shuffle, std::vector<In
 	return status;
 }
 
-static BuildStatus Build(uint32_t seed, const DataReaders& in, std::vector<IndexPiece>& out) {
+static BuildStatus Build(bool use_extra_mem, uint32_t seed, const DataReaders& in, std::vector<IndexPiece>& out) {
 	const auto total = SumInputSize(in);
 	Assert(!in.empty() && total > 0);
 
-	ALLOC_MEM_BLOCK(mem, total*sizeof(V96))
+	ALLOC_MEM_BLOCK(mem, total*sizeof(V96)*(use_extra_mem?2U:1U))
 	auto ids = (V96*)mem.addr();
+	auto shadow = use_extra_mem? ids + total : nullptr;
 
 	const uint32_t n = in.size();
 	if (n == 1 || total < 8192U * n) {
@@ -455,7 +528,7 @@ static BuildStatus Build(uint32_t seed, const DataReaders& in, std::vector<Index
 		out.resize(1);
 		out.front().size = total;
 		auto spot2 = std::chrono::steady_clock::now();
-		auto status = Build(ids, out.front());
+		auto status = Build(ids, shadow, out.front());
 		auto spot3 = std::chrono::steady_clock::now();
 		if (g_trace_build_time) {
 			Logger::Printf("gen-id: %.3fs\n", DurationS(spot1, spot2));
@@ -504,7 +577,7 @@ static BuildStatus Build(uint32_t seed, const DataReaders& in, std::vector<Index
 	if (g_trace_build_time) {
 		Logger::Printf("gen-id: %.3fs\n", DurationS(spot4, spot5));
 	}
-	return Build(ids, shuffle, out);
+	return Build(ids, shadow, shuffle, out);
 }
 
 static bool DumpIndex(IDataWriter& out, const Header& header, const std::vector<IndexPiece>& pieces) {
@@ -584,10 +657,12 @@ static BuildStatus BuildAndDump(const DataReaders& in, IDataWriter& out, const B
 	header.item = total;
 	header.item_high = total >> 32U;
 
+	const bool use_extra_mem = info.key_len + (uint32_t)info.val_len > sizeof(V96)*2+4;
+
 	std::vector<IndexPiece> pieces;
 	for (bool done = false; !done; ) {
 		header.seed = GetSeed();
-		const auto status = Build(header.seed, in, pieces);
+		const auto status = Build(use_extra_mem, header.seed, in, pieces);
 		switch (status) {
 			case BUILD_STATUS_OK:
 				done = true;
