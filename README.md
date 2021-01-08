@@ -1,5 +1,5 @@
 # fastCHD
-An implement of [CHD algorithm](http://cmph.sourceforge.net/chd.html), optimized for modern platform.
+An implement of [CHD algorithm](http://cmph.sourceforge.net/chd.html), optimized for modern platform. It can provide up to half a billion QPS on single machine.
 
 ![](throughput.png)
 

@@ -1,5 +1,5 @@
 # fastCHD
-[CHD算法](http://cmph.sourceforge.net/chd.html)的一种实现，针对现代硬件平台优化。
+[CHD算法](http://cmph.sourceforge.net/chd.html)的一种实现，针对现代硬件平台优化，可提供单机亿级QPS。
 
 ![](throughput.png)
 
