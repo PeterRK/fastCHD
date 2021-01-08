@@ -456,22 +456,23 @@ static BuildStatus Build(V96 ids[], V96 shadow[], std::vector<size_t>& shuffle, 
 	const Divisor<uint16_t> l0sz(n);
 	out.clear();
 	out.resize(n);
-
-	size_t off = 0;
-	std::vector<size_t> border(n);
 	for (unsigned i = 0; i < n; i++) {
 		if (shuffle[i] == 0 || shuffle[i] > UINT32_MAX) {
 			return BUILD_STATUS_BAD_INPUT;
 		}
 		out[i].size = shuffle[i];
-		shuffle[i] = off;
-		PrefetchForFuture(&ids[off]);
-		off += out[i].size;
-		border[i] = off;
 	}
 
 	auto spot1 = std::chrono::steady_clock::now();
 	if (shadow == nullptr) {
+		size_t off = 0;
+		auto border = std::make_unique<size_t[]>(n);
+		for (unsigned i = 0; i < n; i++) {
+			shuffle[i] = off;
+			PrefetchForFuture(&ids[off]);
+			off += out[i].size;
+			border[i] = off;
+		}
 		Shuffle(ids, n,
 				[l0sz](const V96& id)->uint16_t {
 					return L0Hash(id) % l0sz;
@@ -483,10 +484,80 @@ static BuildStatus Build(V96 ids[], V96 shadow[], std::vector<size_t>& shuffle, 
 					return border[i];
 				});
 	} else {
-		Shuffle(ids, shadow, off,
-				[l0sz, &shuffle](const V96& id)->size_t& {
-					return shuffle[L0Hash(id) % l0sz];
-				});
+		size_t total = 0;
+		size_t min = std::numeric_limits<size_t>::max();
+		for (unsigned i = 0; i < n; i++) {
+			shuffle[i] = total;
+			auto sz = out[i].size;
+			total += sz;
+			if (sz < min) {
+				min = sz;
+			}
+		}
+#ifdef NDEBUG
+		auto heads = min >> 20U;
+#else
+		auto heads = min >> 5U;
+#endif
+		if (heads <= 1) {
+			Shuffle(ids, shadow, total,
+					[l0sz, &shuffle](const V96& id)->size_t& {
+						return shuffle[L0Hash(id) % l0sz];
+					});
+		} else {	//multi-head shuffle
+			if (heads > n) {
+				heads = n;
+			}
+			struct Range {
+				size_t off;
+				size_t end;
+			};
+			std::vector<std::unique_ptr<Range[]>> ctx(heads);
+			for (unsigned i = 0; i < heads; i++) {
+				ctx[i] = std::make_unique<Range[]>(n);
+			}
+			for (unsigned j = 0; j < n; j++) {
+				const auto piece = out[j].size / heads;
+				const auto remain = out[j].size % heads;
+				size_t off = shuffle[j];
+				for (unsigned i = 0; i < heads; i++) {
+					const auto part = i<remain ? piece+1 : piece;
+					ctx[i][j] = {off, off+part};
+					off += part;
+				}
+			}
+			std::vector<std::thread> threads;
+			threads.reserve(heads);
+			const auto piece = total / heads;
+			const auto remain = total % heads;
+			size_t off = 0;
+			for (unsigned i = 0; i < heads; i++) {
+				const auto part = i<remain ? piece+1 : piece;
+				threads.emplace_back([&ctx, shadow, l0sz](uint16_t self, V96 ids[], size_t cnt){
+					auto idx = std::make_unique<uint16_t[]>(l0sz.value());
+					for (unsigned j = 0; j < l0sz.value(); j++) {
+						idx[j] = self;
+					}
+					for (size_t i = 0; i < cnt; i++) {
+						auto p = L0Hash(ids[i]) % l0sz;
+						auto& k = idx[p];
+						for (unsigned j = 0; j < ctx.size(); j++) {
+							auto& range = ctx[k][p];
+							auto off = AddRelaxed(range.off, 1UL);
+							if (LIKELY(off < range.end)) {
+								shadow[off] = ids[i];
+								break;
+							}
+							k = (k+1) % ctx.size();
+						}
+					}
+				}, i, ids+off, part);
+				off += part;
+			}
+			for (auto& t : threads) {
+				t.join();
+			}
+		}
 		std::swap(ids, shadow);
 	}
 	auto spot2 = std::chrono::steady_clock::now();
@@ -508,7 +579,11 @@ static BuildStatus Build(bool use_extra_mem, uint32_t seed, const DataReaders& i
 	auto shadow = use_extra_mem? ids + total : nullptr;
 
 	const uint32_t n = in.size();
+#ifdef NDEBUG
 	if (n == 1 || total < 8192U * n) {
+#else
+	if (n == 1 || total < 32U * n) {
+#endif
 		if (total > UINT32_MAX) {
 			return BUILD_STATUS_BAD_INPUT;
 		}
