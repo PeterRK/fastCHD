@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <string>
 #include <memory>
+#include <functional>
 #include <type_traits>
 #include "utils.h"
 
@@ -65,6 +66,7 @@ class PerfectHashtable {
 public:
 	enum LoadPolicy {MAP_ONLY, MAP_FETCH, MAP_OCCUPY, COPY_DATA};
 	explicit PerfectHashtable(const std::string& path, LoadPolicy load_policy=MAP_ONLY);
+	PerfectHashtable(size_t size, const std::function<bool(uint8_t*)>& load);
 	bool operator!() const noexcept { return m_view == nullptr; }
 
 	enum Type : uint8_t {
@@ -102,6 +104,8 @@ private:
 	uint8_t m_key_len = 0;
 	uint16_t m_val_len = 0;
 	size_t m_item = 0;
+
+	void _post_init() noexcept;
 };
 
 } //chd

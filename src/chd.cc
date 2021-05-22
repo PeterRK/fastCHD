@@ -125,6 +125,10 @@ PerfectHashtable::PerfectHashtable(const std::string& path, LoadPolicy load_poli
 		m_res = std::move(res);
 		m_view = std::move(view);
 	}
+	_post_init();
+}
+
+void PerfectHashtable::_post_init() noexcept {
 	auto index = (const PackView*)m_view.get();
 	m_type = index->type;
 	m_key_len = index->key_len;
@@ -134,6 +138,20 @@ PerfectHashtable::PerfectHashtable(const std::string& path, LoadPolicy load_poli
 		m_val_len = index->val_len;
 	}
 	m_item = index->item;
+}
+
+PerfectHashtable::PerfectHashtable(size_t size, const std::function<bool(uint8_t*)>& load) {
+	auto mem = MemBlock(size);
+	if (!mem || !load(mem.addr())) {
+		return;
+	}
+	auto view = CreatePackView(mem.addr(), mem.size());
+	if (view == nullptr) {
+		return;
+	}
+	m_mem = std::move(mem);
+	m_view = std::move(view);
+	_post_init();
 }
 
 size_t PerfectHashtable::locate(const uint8_t* key, uint8_t key_len) const noexcept {
