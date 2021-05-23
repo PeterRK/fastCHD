@@ -22,6 +22,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 #include <memory>
 #include <functional>
 #include <type_traits>
