@@ -201,7 +201,7 @@ Slice PerfectHashtable::search(const uint8_t* key) const noexcept {
 	return SeparatedValue(pack->extend+ReadOffsetField(field), pack->space_end);
 }
 
-unsigned PerfectHashtable::batch_search(unsigned batch, const uint8_t* keys[], const uint8_t* out[],
+unsigned PerfectHashtable::batch_search(unsigned batch, const uint8_t* const keys[], const uint8_t* out[],
 										const PerfectHashtable* patch) const noexcept {
 	auto base = (const PackView*)m_view.get();
 	if (base == nullptr || keys == nullptr || out == nullptr) {
@@ -218,8 +218,8 @@ unsigned PerfectHashtable::batch_search(unsigned batch, const uint8_t* keys[], c
 	}
 }
 
-unsigned PerfectHashtable::batch_fetch(unsigned batch, const uint8_t* keys, uint8_t* data,
-									   const uint8_t* dft_val, const PerfectHashtable* patch) const noexcept {
+unsigned PerfectHashtable::batch_fetch(unsigned batch, const uint8_t* __restrict__ keys, uint8_t* __restrict__ data,
+									   const uint8_t* __restrict__ dft_val, const PerfectHashtable* patch) const noexcept {
 	auto base = (const PackView*)m_view.get();
 	if (base == nullptr || keys == nullptr || data == nullptr) {
 		return 0;

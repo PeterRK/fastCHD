@@ -407,7 +407,7 @@ static FORCE_INLINE void Pipeline(size_t n, const P1& p1, const P2& p2, const P3
 
 
 template <typename P01, typename P02, typename P03, typename P04, typename P05, typename P06, typename P07,
-		typename P08, typename P09, typename P10, typename P11, typename P12, typename P13>
+        typename P08, typename P09, typename P10, typename P11, typename P12, typename P13>
 static FORCE_INLINE void Pipeline(size_t n, const P01& p01, const P02& p02, const P03& p03, const P04& p04,
 								  const P05& p05, const P06& p06, const P07& p07, const P08& p08, const P09& p09,
 								  const P10& p10, const P11& p11, const P12& p12, const P13& p13) {
@@ -648,7 +648,7 @@ static FORCE_INLINE void Pipeline(size_t n, const P01& p01, const P02& p02, cons
 #define PIPELINE_LEVEL 2
 #endif
 
-size_t BatchSearch(const PackView& pack, size_t batch, const uint8_t* keys[], const uint8_t* out[]) {
+size_t BatchSearch(const PackView& pack, size_t batch, const uint8_t* const keys[], const uint8_t* out[]) {
 	if (pack.type != Type::KV_INLINE && pack.type != Type::KEY_SET) {
 		return 0;
 	}
@@ -694,8 +694,8 @@ size_t BatchSearch(const PackView& pack, size_t batch, const uint8_t* keys[], co
 	return hit;
 }
 
-size_t BatchFetch(const PackView& pack, const uint8_t* dft_val,
-					size_t batch, const uint8_t* keys, uint8_t* data) {
+size_t BatchFetch(const PackView& pack, const uint8_t* __restrict__ dft_val,
+					size_t batch, const uint8_t* __restrict__ keys, uint8_t* __restrict__ data) {
 	if (pack.type != Type::KV_INLINE) {
 		return 0;
 	}
@@ -748,7 +748,7 @@ using Step5 = std::tuple<const uint8_t*,Step2>;
 using Step6 = std::tuple<const uint8_t*,Step3>;
 
 size_t BatchSearch(const PackView& base, const PackView& patch,
-					 size_t batch, const uint8_t* keys[], const uint8_t* out[]) {
+					 size_t batch, const uint8_t* const keys[], const uint8_t* out[]) {
 	if ((base.type != Type::KV_INLINE && base.type != Type::KEY_SET)
 		|| base.type != patch.type || base.key_len != patch.key_len) {
 		return 0;
@@ -821,8 +821,8 @@ size_t BatchSearch(const PackView& base, const PackView& patch,
 	return hit;
 }
 
-size_t BatchFetch(const PackView& base, const PackView& patch, const uint8_t* dft_val,
-					size_t batch, const uint8_t* keys, uint8_t* data) {
+size_t BatchFetch(const PackView& base, const PackView& patch, const uint8_t* __restrict__ dft_val,
+					size_t batch, const uint8_t* __restrict__ keys, uint8_t* __restrict__ data) {
 	if (base.type != Type::KV_INLINE || base.type != patch.type
 		|| base.key_len != patch.key_len || base.val_len != patch.val_len) {
 		return 0;

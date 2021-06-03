@@ -88,12 +88,14 @@ public:
 	Slice search(const uint8_t* key) const noexcept;
 
 	//KEY_SET or KV_INLINE
-	unsigned batch_search(unsigned batch, const uint8_t* keys[], const uint8_t* out[],
+	//keys == out is OK
+	unsigned batch_search(unsigned batch, const uint8_t* const keys[], const uint8_t* out[],
 					   const PerfectHashtable* patch=nullptr) const noexcept;
 
 	//only KV_INLINE, if dft_val == nullptr, do nothing when miss
-	unsigned batch_fetch(unsigned batch, const uint8_t* keys, uint8_t* data,
-						 const uint8_t* dft_val=nullptr, const PerfectHashtable* patch=nullptr) const noexcept;
+	unsigned batch_fetch(unsigned batch, const uint8_t* __restrict__ keys, uint8_t* __restrict__ data,
+						 const uint8_t* __restrict__ dft_val=nullptr,
+						 const PerfectHashtable* patch=nullptr) const noexcept;
 
 	BuildStatus derive(const DataReaders& in, IDataWriter& out, Retry retry=DEFAULT_RETRY) const;
 
