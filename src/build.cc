@@ -385,7 +385,7 @@ static NOINLINE BuildStatus Build(V96 ids[], V96 shadow[], IndexPiece& out) {
 	for (uint32_t i = 1; i < out.size; i++) {
 		auto curr = L1Hash(ids[i]) % l1sz;
 		if (curr != last) {
-			auto [sd8, status] = Mapping(ids+begin, i-begin, magic++, bitmap.get(), l2sz);
+			auto [sd8, status] = Mapping(ids+begin, i-begin, magic--, bitmap.get(), l2sz);
 			if (status != BUILD_STATUS_OK) {
 				return status;
 			}
