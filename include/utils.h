@@ -23,6 +23,8 @@
 #include <cstdint>
 #include <cstdarg>
 #include <memory>
+#include <utility>
+#include <type_traits>
 
 namespace chd {
 
