@@ -39,8 +39,8 @@ file(GLOB test_src
     test/*.cc
 )
 
-add_executable(test ${test_src})
-target_link_libraries(test pthread gtest chd)
+add_executable(chd-test ${test_src})
+target_link_libraries(chd-test pthread gtest chd)
 
 add_executable(bench-billion benchmark/billion.cc)
 target_link_libraries(bench-billion pthread gflags chd)
