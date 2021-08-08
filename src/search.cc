@@ -423,7 +423,7 @@ void BatchDataMapping(const PackView& index, uint8_t* space, size_t batch,
 		uint8_t* line;
 	};
 
-#if PIPELINE_LEVEL >= 4
+#if PIPELINE_LEVEL >= 5
 #define BUBBLE_GROUP(type) BUBBLE(type), BUBBLE(type),
 #elif PIPELINE_LEVEL >= 3
 #define BUBBLE_GROUP(type) BUBBLE(type),
