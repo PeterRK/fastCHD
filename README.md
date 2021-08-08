@@ -11,7 +11,7 @@ An implement of [CHD algorithm](http://cmph.sourceforge.net/chd.html), optimized
 * work on CPU support little-endian unaligned memory access (X86，ARM，RISC-V...)
 
 ### Other Solutions
-* [high read performance](https://github.com/PeterRK/SSHT)
+* [faster reading](https://github.com/PeterRK/SSHT)
 * [online writable](https://github.com/PeterRK/estuary)
 
 ---
