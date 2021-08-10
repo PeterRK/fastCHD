@@ -81,44 +81,44 @@ V128 HashTo128(const uint8_t* msg, uint8_t len, uint64_t seed) {
 
 	d += ((uint64_t)len) << 56U;
 	switch (len & 0xfU) {
-	case 15:
-		d += ((uint64_t)msg[14]) << 48U;
-	case 14:
-		d += ((uint64_t)msg[13]) << 40U;
-	case 13:
-		d += ((uint64_t)msg[12]) << 32U;
-	case 12:
-		d += *(uint32_t*)(msg+8);
-		c += *(uint64_t*)msg;
-		break;
-	case 11:
-		d += ((uint64_t)msg[10]) << 16U;
-	case 10:
-		d += ((uint64_t)msg[9]) << 8U;
-	case 9:
-		d += (uint64_t)msg[8];
-	case 8:
-		c += *(uint64_t*)msg;
-		break;
-	case 7:
-		c += ((uint64_t)msg[6]) << 48U;
-	case 6:
-		c += ((uint64_t)msg[5]) << 40U;
-	case 5:
-		c += ((uint64_t)msg[4]) << 32U;
-	case 4:
-		c += *(uint32_t*)msg;
-		break;
-	case 3:
-		c += ((uint64_t)msg[2]) << 16U;
-	case 2:
-		c += ((uint64_t)msg[1]) << 8U;
-	case 1:
-		c += (uint64_t)msg[0];
-		break;
-	case 0:
-		c += magic;
-		d += magic;
+		case 15:
+			d += ((uint64_t)msg[14]) << 48U;
+		case 14:
+			d += ((uint64_t)msg[13]) << 40U;
+		case 13:
+			d += ((uint64_t)msg[12]) << 32U;
+		case 12:
+			d += *(uint32_t*)(msg+8);
+			c += *(uint64_t*)msg;
+			break;
+		case 11:
+			d += ((uint64_t)msg[10]) << 16U;
+		case 10:
+			d += ((uint64_t)msg[9]) << 8U;
+		case 9:
+			d += (uint64_t)msg[8];
+		case 8:
+			c += *(uint64_t*)msg;
+			break;
+		case 7:
+			c += ((uint64_t)msg[6]) << 48U;
+		case 6:
+			c += ((uint64_t)msg[5]) << 40U;
+		case 5:
+			c += ((uint64_t)msg[4]) << 32U;
+		case 4:
+			c += *(uint32_t*)msg;
+			break;
+		case 3:
+			c += ((uint64_t)msg[2]) << 16U;
+		case 2:
+			c += ((uint64_t)msg[1]) << 8U;
+		case 1:
+			c += (uint64_t)msg[0];
+			break;
+		case 0:
+			c += magic;
+			d += magic;
 	}
 	End(a, b, c, d);
 

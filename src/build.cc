@@ -708,7 +708,6 @@ std::unique_ptr<uint8_t[]> CreateIndexView(const BasicInfo& info, uint32_t seed,
 	uint64_t off = 0;
 	for (unsigned i = 0; i < pieces.size(); i++) {
 		index->segments[i] = SegmentView{};
-		index->segments[i].item = pieces[i].size;
 		index->segments[i].l1sz = L1Size(pieces[i].size);
 		index->segments[i].l2sz = L2Size(pieces[i].size);
 		index->segments[i].sections = pieces[i].sections.get();

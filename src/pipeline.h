@@ -24,70 +24,77 @@
 #include <iostream>
 
 void GenCode(unsigned depth) {
-  if (depth < 2) {
-    return;
-  }
-  std::cout << "template <typename P1";
-  for (unsigned i = 2; i <= depth; i++) {
-    std::cout << ", typename P" << i;
-  }
-  std::cout << ">\nstatic inline __attribute__((always_inline)) void\nPipeline(size_t n";
-  for (unsigned i = 1; i <= depth; i++) {
-    std::cout << ", const P" << i << "& p" << i;
-  }
-  std::cout << ") {\n\tusing S1 = std::result_of_t<P1(size_t)>;\n";
-  for (unsigned i = 2; i < depth; i++) {
-    std::cout << "\tusing S" << i << " = std::result_of_t<P" << i << "(S" << (i-1) << ",size_t)>;\n";
-  }
-  std::cout << "\tunion {\n\t\t";
-  for (unsigned i = 1; i < depth; i++) {
-    std::cout << "S" << i << " s" << i << "; ";
-  }
-  std::cout << "\n\t} ctx[" << depth << "];\n\n"
-            << "\tif (n < " << (depth-1) << ") {\n"
-            << "\t\tfor (size_t i = 0; i < n; i++) ctx[i].s1 = p1(i);\n";
-  for (unsigned i = 2; i < depth; i++) {
-    std::cout << "\t\tfor (size_t i = 0; i < n; i++) ctx[i].s" << i
-              << " = p" << i << "(ctx[i].s" << (i-1) << ", i);\n";
-  }
-  std::cout << "\t\tfor (size_t i = 0; i < n; i++) p" << depth << "(ctx[i].s" << (depth-1) << ", i);\n"
-               "\t\treturn;\n"
-               "\t}\n";
-  for (unsigned i = 1; i < depth; i++) {
-    std::cout << "\n\tctx[" << (i-1) << "].s1 = p1(" << (i-1) << ");\n";
-    for (unsigned j = 2; j <= i; j++) {
-      std::cout << "\tctx[" << (i-j) << "].s" << j << " = p" << j
-                << "(ctx[" << (i-j) << "].s" << (j-1) << ", " << (i-j) << ");\n";
+    if (depth < 2) {
+        return;
     }
-  }
-  std::cout << "\n\tint cur = " << (depth-1) << ";"
-            << "\n\tauto shift = [&cur](int step) {"
-            << "\n\t\tcur -= step;"
-            << "\n\t\tif (cur < 0) {"
-            << "\n\t\t\tcur += " << depth << ';'
-            << "\n\t\t}"
-            << "\n\t};\n";
-  std::cout << "\tfor (size_t i = " << (depth-1) << "; i < n; i++) {\n"
-            << "\t\tctx[cur].s1 = p1(i);\n";
-  for (unsigned i = 2; i < depth; i++) {
-    std::cout << "\t\tshift(1); ctx[cur].s" << i << " = p" << i
-              << "(ctx[cur].s" << (i-1) << ", i-" << (i-1) << ");\n";
-  }
-  std::cout << "\t\tshift(1); p" << depth << "(ctx[cur].s" << (depth-1) << ", i-" << (depth-1) << ");\n"
-            << "\t}\n";
-  for (unsigned i = 1; i < depth; i++) {
-    std::cout << "\n\tshift(" << i << "); ";
-    for (unsigned j = i+1; j < depth; j++) {
-      std::cout << "ctx[cur].s" << j << " = p" << j
-                << "(ctx[cur].s" << (j-1) << ", n-" << (j-i) << ");\n\tshift(1); ";
+    std::cout << "template <typename P1";
+    for (unsigned i = 2; i <= depth; i++) {
+        std::cout << ", typename P" << i;
     }
-    std::cout << "p" << depth << "(ctx[cur].s" << (depth-1) << ", n-" << (depth-i) << ");\n";
-  }
-  std::cout << "}\n" << std::endl;
+    std::cout << ">\nstatic inline __attribute__((always_inline)) void\nPipeline(size_t n";
+    for (unsigned i = 1; i <= depth; i++) {
+        std::cout << ", const P" << i << "& p" << i;
+    }
+    std::cout << ") {\n\tusing S1 = std::result_of_t<P1(size_t)>;\n";
+    for (unsigned i = 2; i < depth; i++) {
+        std::cout << "\tusing S" << i << " = std::result_of_t<P" << i << "(S" << (i-1) << ",size_t)>;\n";
+    }
+    std::cout << "\tunion {\n\t\t";
+    for (unsigned i = 1; i < depth; i++) {
+        std::cout << "S" << i << " s" << i << "; ";
+    }
+    std::cout << "\n\t} ctx[" << depth << "];\n\n"
+              << "\tif (n < " << (depth-1) << ") {\n"
+              << "\t\tfor (size_t i = 0; i < n; i++) ctx[i].s1 = p1(i);\n";
+    for (unsigned i = 2; i < depth; i++) {
+        std::cout << "\t\tfor (size_t i = 0; i < n; i++) ctx[i].s" << i
+                  << " = p" << i << "(ctx[i].s" << (i-1) << ", i);\n";
+    }
+    std::cout << "\t\tfor (size_t i = 0; i < n; i++) p" << depth << "(ctx[i].s" << (depth-1) << ", i);\n"
+              << "\t\treturn;\n"
+              << "\t}\n";
+    for (unsigned i = 1; i < depth; i++) {
+        std::cout << "\n\tctx[" << (i-1) << "].s1 = p1(" << (i-1) << ");\n";
+        for (unsigned j = 2; j <= i; j++) {
+            std::cout << "\tctx[" << (i-j) << "].s" << j << " = p" << j
+                      << "(ctx[" << (i-j) << "].s" << (j-1) << ", " << (i-j) << ");\n";
+        }
+    }
+    std::cout << "\n\tint cur = " << (depth-1) << ";"
+              << "\n\tauto forward = [&cur]() { if (++cur == " << depth << ") cur = 0; };"
+              << "\n\tauto sft = [&cur](int step)->int { return CountDown(cur,step," << depth << "); };";
+    std::cout << "\n\n\tfor (size_t i = " << (depth-1) << "; i < n; i++) {\n"
+              << "\t\tctx[cur].s1 = p1(i);\n";
+    for (unsigned i = 2; i < depth; i++) {
+        std::cout << "\t\tctx[sft(" << (i-1) << ")].s" << i << " = p" << i
+                  << "(ctx[sft(" << (i-1) << ")].s" << (i-1) << ", i-" << (i-1) << ");\n";
+    }
+    std::cout << "\t\tp" << depth << "(ctx[sft(" << (depth-1) << ")].s" << (depth-1) << ", i-" << (depth-1) << ");\n"
+              << "\t\tforward();\n"
+              << "\t}\n";
+    for (unsigned i = 1; i < depth; i++) {
+        std::cout << '\n';
+        for (unsigned j = i+1; j < depth; j++) {
+            std::cout << "\tctx[sft(" << (j-1) << ")].s" << j << " = p" << j
+                      << "(ctx[sft(" << (j-1) << ")].s" << (j-1) << ", n-" << (j-i) << ");\n";
+        }
+        std::cout << "\tp" << depth << "(ctx[sft(" << (depth-1) << ")].s" << (depth-1) << ", n-" << (depth-i) << ");\n"
+                  << "\tforward();\n";
+    }
+    std::cout << "}\n" << std::endl;
 }
 ======================================================================== */
 
 #include <type_traits>
+
+static inline int CountDown(int v, int d, int r) {
+	int x = v + (r-d);
+	v -= d;
+	if (__builtin_expect(v < 0, 0)) {
+		v = x;
+	}
+	return v;
+}
 
 template <typename P1, typename P2, typename P3>
 static inline __attribute__((always_inline)) void
@@ -111,22 +118,22 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3) {
 	ctx[0].s2 = p2(ctx[0].s1, 0);
 
 	int cur = 2;
-	auto shift = [&cur](int step) {
-		cur -= step;
-		if (cur < 0) {
-			cur += 3;
-		}
-	};
+	auto forward = [&cur]() { if (++cur == 3) cur = 0; };
+	auto sft = [&cur](int step)->int { return CountDown(cur,step,3); };
+
 	for (size_t i = 2; i < n; i++) {
 		ctx[cur].s1 = p1(i);
-		shift(1); ctx[cur].s2 = p2(ctx[cur].s1, i-1);
-		shift(1); p3(ctx[cur].s2, i-2);
+		ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, i-1);
+		p3(ctx[sft(2)].s2, i-2);
+		forward();
 	}
 
-	shift(1); ctx[cur].s2 = p2(ctx[cur].s1, n-1);
-	shift(1); p3(ctx[cur].s2, n-2);
+	ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, n-1);
+	p3(ctx[sft(2)].s2, n-2);
+	forward();
 
-	shift(2); p3(ctx[cur].s2, n-1);
+	p3(ctx[sft(2)].s2, n-1);
+	forward();
 }
 
 template <typename P1, typename P2, typename P3, typename P4>
@@ -157,27 +164,28 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4) {
 	ctx[0].s3 = p3(ctx[0].s2, 0);
 
 	int cur = 3;
-	auto shift = [&cur](int step) {
-		cur -= step;
-		if (cur < 0) {
-			cur += 4;
-		}
-	};
+	auto forward = [&cur]() { if (++cur == 4) cur = 0; };
+	auto sft = [&cur](int step)->int { return CountDown(cur,step,4); };
+
 	for (size_t i = 3; i < n; i++) {
 		ctx[cur].s1 = p1(i);
-		shift(1); ctx[cur].s2 = p2(ctx[cur].s1, i-1);
-		shift(1); ctx[cur].s3 = p3(ctx[cur].s2, i-2);
-		shift(1); p4(ctx[cur].s3, i-3);
+		ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, i-1);
+		ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, i-2);
+		p4(ctx[sft(3)].s3, i-3);
+		forward();
 	}
 
-	shift(1); ctx[cur].s2 = p2(ctx[cur].s1, n-1);
-	shift(1); ctx[cur].s3 = p3(ctx[cur].s2, n-2);
-	shift(1); p4(ctx[cur].s3, n-3);
+	ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, n-1);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-2);
+	p4(ctx[sft(3)].s3, n-3);
+	forward();
 
-	shift(2); ctx[cur].s3 = p3(ctx[cur].s2, n-1);
-	shift(1); p4(ctx[cur].s3, n-2);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-1);
+	p4(ctx[sft(3)].s3, n-2);
+	forward();
 
-	shift(3); p4(ctx[cur].s3, n-1);
+	p4(ctx[sft(3)].s3, n-1);
+	forward();
 }
 
 template <typename P1, typename P2, typename P3, typename P4, typename P5>
@@ -215,33 +223,35 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const
 	ctx[0].s4 = p4(ctx[0].s3, 0);
 
 	int cur = 4;
-	auto shift = [&cur](int step) {
-		cur -= step;
-		if (cur < 0) {
-			cur += 5;
-		}
-	};
+	auto forward = [&cur]() { if (++cur == 5) cur = 0; };
+	auto sft = [&cur](int step)->int { return CountDown(cur,step,5); };
+
 	for (size_t i = 4; i < n; i++) {
 		ctx[cur].s1 = p1(i);
-		shift(1); ctx[cur].s2 = p2(ctx[cur].s1, i-1);
-		shift(1); ctx[cur].s3 = p3(ctx[cur].s2, i-2);
-		shift(1); ctx[cur].s4 = p4(ctx[cur].s3, i-3);
-		shift(1); p5(ctx[cur].s4, i-4);
+		ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, i-1);
+		ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, i-2);
+		ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, i-3);
+		p5(ctx[sft(4)].s4, i-4);
+		forward();
 	}
 
-	shift(1); ctx[cur].s2 = p2(ctx[cur].s1, n-1);
-	shift(1); ctx[cur].s3 = p3(ctx[cur].s2, n-2);
-	shift(1); ctx[cur].s4 = p4(ctx[cur].s3, n-3);
-	shift(1); p5(ctx[cur].s4, n-4);
+	ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, n-1);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-2);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-3);
+	p5(ctx[sft(4)].s4, n-4);
+	forward();
 
-	shift(2); ctx[cur].s3 = p3(ctx[cur].s2, n-1);
-	shift(1); ctx[cur].s4 = p4(ctx[cur].s3, n-2);
-	shift(1); p5(ctx[cur].s4, n-3);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-1);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-2);
+	p5(ctx[sft(4)].s4, n-3);
+	forward();
 
-	shift(3); ctx[cur].s4 = p4(ctx[cur].s3, n-1);
-	shift(1); p5(ctx[cur].s4, n-2);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-1);
+	p5(ctx[sft(4)].s4, n-2);
+	forward();
 
-	shift(4); p5(ctx[cur].s4, n-1);
+	p5(ctx[sft(4)].s4, n-1);
+	forward();
 }
 
 template <typename P1, typename P2, typename P3, typename P4, typename P5, typename P6>
@@ -287,40 +297,43 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const
 	ctx[0].s5 = p5(ctx[0].s4, 0);
 
 	int cur = 5;
-	auto shift = [&cur](int step) {
-		cur -= step;
-		if (cur < 0) {
-			cur += 6;
-		}
-	};
+	auto forward = [&cur]() { if (++cur == 6) cur = 0; };
+	auto sft = [&cur](int step)->int { return CountDown(cur,step,6); };
+
 	for (size_t i = 5; i < n; i++) {
 		ctx[cur].s1 = p1(i);
-		shift(1); ctx[cur].s2 = p2(ctx[cur].s1, i-1);
-		shift(1); ctx[cur].s3 = p3(ctx[cur].s2, i-2);
-		shift(1); ctx[cur].s4 = p4(ctx[cur].s3, i-3);
-		shift(1); ctx[cur].s5 = p5(ctx[cur].s4, i-4);
-		shift(1); p6(ctx[cur].s5, i-5);
+		ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, i-1);
+		ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, i-2);
+		ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, i-3);
+		ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, i-4);
+		p6(ctx[sft(5)].s5, i-5);
+		forward();
 	}
 
-	shift(1); ctx[cur].s2 = p2(ctx[cur].s1, n-1);
-	shift(1); ctx[cur].s3 = p3(ctx[cur].s2, n-2);
-	shift(1); ctx[cur].s4 = p4(ctx[cur].s3, n-3);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-4);
-	shift(1); p6(ctx[cur].s5, n-5);
+	ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, n-1);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-2);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-3);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-4);
+	p6(ctx[sft(5)].s5, n-5);
+	forward();
 
-	shift(2); ctx[cur].s3 = p3(ctx[cur].s2, n-1);
-	shift(1); ctx[cur].s4 = p4(ctx[cur].s3, n-2);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-3);
-	shift(1); p6(ctx[cur].s5, n-4);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-1);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-2);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-3);
+	p6(ctx[sft(5)].s5, n-4);
+	forward();
 
-	shift(3); ctx[cur].s4 = p4(ctx[cur].s3, n-1);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-2);
-	shift(1); p6(ctx[cur].s5, n-3);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-1);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-2);
+	p6(ctx[sft(5)].s5, n-3);
+	forward();
 
-	shift(4); ctx[cur].s5 = p5(ctx[cur].s4, n-1);
-	shift(1); p6(ctx[cur].s5, n-2);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-1);
+	p6(ctx[sft(5)].s5, n-2);
+	forward();
 
-	shift(5); p6(ctx[cur].s5, n-1);
+	p6(ctx[sft(5)].s5, n-1);
+	forward();
 }
 
 template <typename P1, typename P2, typename P3, typename P4, typename P5, typename P6, typename P7>
@@ -375,48 +388,52 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const
 	ctx[0].s6 = p6(ctx[0].s5, 0);
 
 	int cur = 6;
-	auto shift = [&cur](int step) {
-		cur -= step;
-		if (cur < 0) {
-			cur += 7;
-		}
-	};
+	auto forward = [&cur]() { if (++cur == 7) cur = 0; };
+	auto sft = [&cur](int step)->int { return CountDown(cur,step,7); };
+
 	for (size_t i = 6; i < n; i++) {
 		ctx[cur].s1 = p1(i);
-		shift(1); ctx[cur].s2 = p2(ctx[cur].s1, i-1);
-		shift(1); ctx[cur].s3 = p3(ctx[cur].s2, i-2);
-		shift(1); ctx[cur].s4 = p4(ctx[cur].s3, i-3);
-		shift(1); ctx[cur].s5 = p5(ctx[cur].s4, i-4);
-		shift(1); ctx[cur].s6 = p6(ctx[cur].s5, i-5);
-		shift(1); p7(ctx[cur].s6, i-6);
+		ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, i-1);
+		ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, i-2);
+		ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, i-3);
+		ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, i-4);
+		ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, i-5);
+		p7(ctx[sft(6)].s6, i-6);
+		forward();
 	}
 
-	shift(1); ctx[cur].s2 = p2(ctx[cur].s1, n-1);
-	shift(1); ctx[cur].s3 = p3(ctx[cur].s2, n-2);
-	shift(1); ctx[cur].s4 = p4(ctx[cur].s3, n-3);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-4);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-5);
-	shift(1); p7(ctx[cur].s6, n-6);
+	ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, n-1);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-2);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-3);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-4);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-5);
+	p7(ctx[sft(6)].s6, n-6);
+	forward();
 
-	shift(2); ctx[cur].s3 = p3(ctx[cur].s2, n-1);
-	shift(1); ctx[cur].s4 = p4(ctx[cur].s3, n-2);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-3);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-4);
-	shift(1); p7(ctx[cur].s6, n-5);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-1);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-2);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-3);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-4);
+	p7(ctx[sft(6)].s6, n-5);
+	forward();
 
-	shift(3); ctx[cur].s4 = p4(ctx[cur].s3, n-1);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-2);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-3);
-	shift(1); p7(ctx[cur].s6, n-4);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-1);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-2);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-3);
+	p7(ctx[sft(6)].s6, n-4);
+	forward();
 
-	shift(4); ctx[cur].s5 = p5(ctx[cur].s4, n-1);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-2);
-	shift(1); p7(ctx[cur].s6, n-3);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-1);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-2);
+	p7(ctx[sft(6)].s6, n-3);
+	forward();
 
-	shift(5); ctx[cur].s6 = p6(ctx[cur].s5, n-1);
-	shift(1); p7(ctx[cur].s6, n-2);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-1);
+	p7(ctx[sft(6)].s6, n-2);
+	forward();
 
-	shift(6); p7(ctx[cur].s6, n-1);
+	p7(ctx[sft(6)].s6, n-1);
+	forward();
 }
 
 template <typename P1, typename P2, typename P3, typename P4, typename P5, typename P6, typename P7, typename P8>
@@ -481,57 +498,62 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const
 	ctx[0].s7 = p7(ctx[0].s6, 0);
 
 	int cur = 7;
-	auto shift = [&cur](int step) {
-		cur -= step;
-		if (cur < 0) {
-			cur += 8;
-		}
-	};
+	auto forward = [&cur]() { if (++cur == 8) cur = 0; };
+	auto sft = [&cur](int step)->int { return CountDown(cur,step,8); };
+
 	for (size_t i = 7; i < n; i++) {
 		ctx[cur].s1 = p1(i);
-		shift(1); ctx[cur].s2 = p2(ctx[cur].s1, i-1);
-		shift(1); ctx[cur].s3 = p3(ctx[cur].s2, i-2);
-		shift(1); ctx[cur].s4 = p4(ctx[cur].s3, i-3);
-		shift(1); ctx[cur].s5 = p5(ctx[cur].s4, i-4);
-		shift(1); ctx[cur].s6 = p6(ctx[cur].s5, i-5);
-		shift(1); ctx[cur].s7 = p7(ctx[cur].s6, i-6);
-		shift(1); p8(ctx[cur].s7, i-7);
+		ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, i-1);
+		ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, i-2);
+		ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, i-3);
+		ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, i-4);
+		ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, i-5);
+		ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, i-6);
+		p8(ctx[sft(7)].s7, i-7);
+		forward();
 	}
 
-	shift(1); ctx[cur].s2 = p2(ctx[cur].s1, n-1);
-	shift(1); ctx[cur].s3 = p3(ctx[cur].s2, n-2);
-	shift(1); ctx[cur].s4 = p4(ctx[cur].s3, n-3);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-4);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-5);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-6);
-	shift(1); p8(ctx[cur].s7, n-7);
+	ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, n-1);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-2);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-3);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-4);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-5);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-6);
+	p8(ctx[sft(7)].s7, n-7);
+	forward();
 
-	shift(2); ctx[cur].s3 = p3(ctx[cur].s2, n-1);
-	shift(1); ctx[cur].s4 = p4(ctx[cur].s3, n-2);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-3);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-4);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-5);
-	shift(1); p8(ctx[cur].s7, n-6);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-1);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-2);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-3);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-4);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-5);
+	p8(ctx[sft(7)].s7, n-6);
+	forward();
 
-	shift(3); ctx[cur].s4 = p4(ctx[cur].s3, n-1);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-2);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-3);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-4);
-	shift(1); p8(ctx[cur].s7, n-5);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-1);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-2);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-3);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-4);
+	p8(ctx[sft(7)].s7, n-5);
+	forward();
 
-	shift(4); ctx[cur].s5 = p5(ctx[cur].s4, n-1);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-2);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-3);
-	shift(1); p8(ctx[cur].s7, n-4);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-1);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-2);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-3);
+	p8(ctx[sft(7)].s7, n-4);
+	forward();
 
-	shift(5); ctx[cur].s6 = p6(ctx[cur].s5, n-1);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-2);
-	shift(1); p8(ctx[cur].s7, n-3);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-1);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-2);
+	p8(ctx[sft(7)].s7, n-3);
+	forward();
 
-	shift(6); ctx[cur].s7 = p7(ctx[cur].s6, n-1);
-	shift(1); p8(ctx[cur].s7, n-2);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-1);
+	p8(ctx[sft(7)].s7, n-2);
+	forward();
 
-	shift(7); p8(ctx[cur].s7, n-1);
+	p8(ctx[sft(7)].s7, n-1);
+	forward();
 }
 
 template <typename P1, typename P2, typename P3, typename P4, typename P5, typename P6, typename P7, typename P8, typename P9>
@@ -607,67 +629,73 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const
 	ctx[0].s8 = p8(ctx[0].s7, 0);
 
 	int cur = 8;
-	auto shift = [&cur](int step) {
-		cur -= step;
-		if (cur < 0) {
-			cur += 9;
-		}
-	};
+	auto forward = [&cur]() { if (++cur == 9) cur = 0; };
+	auto sft = [&cur](int step)->int { return CountDown(cur,step,9); };
+
 	for (size_t i = 8; i < n; i++) {
 		ctx[cur].s1 = p1(i);
-		shift(1); ctx[cur].s2 = p2(ctx[cur].s1, i-1);
-		shift(1); ctx[cur].s3 = p3(ctx[cur].s2, i-2);
-		shift(1); ctx[cur].s4 = p4(ctx[cur].s3, i-3);
-		shift(1); ctx[cur].s5 = p5(ctx[cur].s4, i-4);
-		shift(1); ctx[cur].s6 = p6(ctx[cur].s5, i-5);
-		shift(1); ctx[cur].s7 = p7(ctx[cur].s6, i-6);
-		shift(1); ctx[cur].s8 = p8(ctx[cur].s7, i-7);
-		shift(1); p9(ctx[cur].s8, i-8);
+		ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, i-1);
+		ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, i-2);
+		ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, i-3);
+		ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, i-4);
+		ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, i-5);
+		ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, i-6);
+		ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, i-7);
+		p9(ctx[sft(8)].s8, i-8);
+		forward();
 	}
 
-	shift(1); ctx[cur].s2 = p2(ctx[cur].s1, n-1);
-	shift(1); ctx[cur].s3 = p3(ctx[cur].s2, n-2);
-	shift(1); ctx[cur].s4 = p4(ctx[cur].s3, n-3);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-4);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-5);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-6);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-7);
-	shift(1); p9(ctx[cur].s8, n-8);
+	ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, n-1);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-2);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-3);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-4);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-5);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-6);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-7);
+	p9(ctx[sft(8)].s8, n-8);
+	forward();
 
-	shift(2); ctx[cur].s3 = p3(ctx[cur].s2, n-1);
-	shift(1); ctx[cur].s4 = p4(ctx[cur].s3, n-2);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-3);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-4);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-5);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-6);
-	shift(1); p9(ctx[cur].s8, n-7);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-1);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-2);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-3);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-4);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-5);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-6);
+	p9(ctx[sft(8)].s8, n-7);
+	forward();
 
-	shift(3); ctx[cur].s4 = p4(ctx[cur].s3, n-1);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-2);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-3);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-4);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-5);
-	shift(1); p9(ctx[cur].s8, n-6);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-1);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-2);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-3);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-4);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-5);
+	p9(ctx[sft(8)].s8, n-6);
+	forward();
 
-	shift(4); ctx[cur].s5 = p5(ctx[cur].s4, n-1);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-2);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-3);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-4);
-	shift(1); p9(ctx[cur].s8, n-5);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-1);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-2);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-3);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-4);
+	p9(ctx[sft(8)].s8, n-5);
+	forward();
 
-	shift(5); ctx[cur].s6 = p6(ctx[cur].s5, n-1);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-2);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-3);
-	shift(1); p9(ctx[cur].s8, n-4);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-1);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-2);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-3);
+	p9(ctx[sft(8)].s8, n-4);
+	forward();
 
-	shift(6); ctx[cur].s7 = p7(ctx[cur].s6, n-1);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-2);
-	shift(1); p9(ctx[cur].s8, n-3);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-1);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-2);
+	p9(ctx[sft(8)].s8, n-3);
+	forward();
 
-	shift(7); ctx[cur].s8 = p8(ctx[cur].s7, n-1);
-	shift(1); p9(ctx[cur].s8, n-2);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-1);
+	p9(ctx[sft(8)].s8, n-2);
+	forward();
 
-	shift(8); p9(ctx[cur].s8, n-1);
+	p9(ctx[sft(8)].s8, n-1);
+	forward();
 }
 
 template <typename P1, typename P2, typename P3, typename P4, typename P5, typename P6, typename P7, typename P8, typename P9, typename P10>
@@ -755,78 +783,85 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const
 	ctx[0].s9 = p9(ctx[0].s8, 0);
 
 	int cur = 9;
-	auto shift = [&cur](int step) {
-		cur -= step;
-		if (cur < 0) {
-			cur += 10;
-		}
-	};
+	auto forward = [&cur]() { if (++cur == 10) cur = 0; };
+	auto sft = [&cur](int step)->int { return CountDown(cur,step,10); };
+
 	for (size_t i = 9; i < n; i++) {
 		ctx[cur].s1 = p1(i);
-		shift(1); ctx[cur].s2 = p2(ctx[cur].s1, i-1);
-		shift(1); ctx[cur].s3 = p3(ctx[cur].s2, i-2);
-		shift(1); ctx[cur].s4 = p4(ctx[cur].s3, i-3);
-		shift(1); ctx[cur].s5 = p5(ctx[cur].s4, i-4);
-		shift(1); ctx[cur].s6 = p6(ctx[cur].s5, i-5);
-		shift(1); ctx[cur].s7 = p7(ctx[cur].s6, i-6);
-		shift(1); ctx[cur].s8 = p8(ctx[cur].s7, i-7);
-		shift(1); ctx[cur].s9 = p9(ctx[cur].s8, i-8);
-		shift(1); p10(ctx[cur].s9, i-9);
+		ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, i-1);
+		ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, i-2);
+		ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, i-3);
+		ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, i-4);
+		ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, i-5);
+		ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, i-6);
+		ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, i-7);
+		ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, i-8);
+		p10(ctx[sft(9)].s9, i-9);
+		forward();
 	}
 
-	shift(1); ctx[cur].s2 = p2(ctx[cur].s1, n-1);
-	shift(1); ctx[cur].s3 = p3(ctx[cur].s2, n-2);
-	shift(1); ctx[cur].s4 = p4(ctx[cur].s3, n-3);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-4);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-5);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-6);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-7);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-8);
-	shift(1); p10(ctx[cur].s9, n-9);
+	ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, n-1);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-2);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-3);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-4);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-5);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-6);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-7);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-8);
+	p10(ctx[sft(9)].s9, n-9);
+	forward();
 
-	shift(2); ctx[cur].s3 = p3(ctx[cur].s2, n-1);
-	shift(1); ctx[cur].s4 = p4(ctx[cur].s3, n-2);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-3);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-4);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-5);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-6);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-7);
-	shift(1); p10(ctx[cur].s9, n-8);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-1);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-2);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-3);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-4);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-5);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-6);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-7);
+	p10(ctx[sft(9)].s9, n-8);
+	forward();
 
-	shift(3); ctx[cur].s4 = p4(ctx[cur].s3, n-1);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-2);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-3);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-4);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-5);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-6);
-	shift(1); p10(ctx[cur].s9, n-7);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-1);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-2);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-3);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-4);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-5);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-6);
+	p10(ctx[sft(9)].s9, n-7);
+	forward();
 
-	shift(4); ctx[cur].s5 = p5(ctx[cur].s4, n-1);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-2);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-3);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-4);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-5);
-	shift(1); p10(ctx[cur].s9, n-6);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-1);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-2);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-3);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-4);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-5);
+	p10(ctx[sft(9)].s9, n-6);
+	forward();
 
-	shift(5); ctx[cur].s6 = p6(ctx[cur].s5, n-1);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-2);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-3);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-4);
-	shift(1); p10(ctx[cur].s9, n-5);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-1);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-2);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-3);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-4);
+	p10(ctx[sft(9)].s9, n-5);
+	forward();
 
-	shift(6); ctx[cur].s7 = p7(ctx[cur].s6, n-1);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-2);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-3);
-	shift(1); p10(ctx[cur].s9, n-4);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-1);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-2);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-3);
+	p10(ctx[sft(9)].s9, n-4);
+	forward();
 
-	shift(7); ctx[cur].s8 = p8(ctx[cur].s7, n-1);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-2);
-	shift(1); p10(ctx[cur].s9, n-3);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-1);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-2);
+	p10(ctx[sft(9)].s9, n-3);
+	forward();
 
-	shift(8); ctx[cur].s9 = p9(ctx[cur].s8, n-1);
-	shift(1); p10(ctx[cur].s9, n-2);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-1);
+	p10(ctx[sft(9)].s9, n-2);
+	forward();
 
-	shift(9); p10(ctx[cur].s9, n-1);
+	p10(ctx[sft(9)].s9, n-1);
+	forward();
 }
 
 template <typename P1, typename P2, typename P3, typename P4, typename P5, typename P6, typename P7, typename P8, typename P9, typename P10, typename P11>
@@ -927,90 +962,98 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const
 	ctx[0].s10 = p10(ctx[0].s9, 0);
 
 	int cur = 10;
-	auto shift = [&cur](int step) {
-		cur -= step;
-		if (cur < 0) {
-			cur += 11;
-		}
-	};
+	auto forward = [&cur]() { if (++cur == 11) cur = 0; };
+	auto sft = [&cur](int step)->int { return CountDown(cur,step,11); };
+
 	for (size_t i = 10; i < n; i++) {
 		ctx[cur].s1 = p1(i);
-		shift(1); ctx[cur].s2 = p2(ctx[cur].s1, i-1);
-		shift(1); ctx[cur].s3 = p3(ctx[cur].s2, i-2);
-		shift(1); ctx[cur].s4 = p4(ctx[cur].s3, i-3);
-		shift(1); ctx[cur].s5 = p5(ctx[cur].s4, i-4);
-		shift(1); ctx[cur].s6 = p6(ctx[cur].s5, i-5);
-		shift(1); ctx[cur].s7 = p7(ctx[cur].s6, i-6);
-		shift(1); ctx[cur].s8 = p8(ctx[cur].s7, i-7);
-		shift(1); ctx[cur].s9 = p9(ctx[cur].s8, i-8);
-		shift(1); ctx[cur].s10 = p10(ctx[cur].s9, i-9);
-		shift(1); p11(ctx[cur].s10, i-10);
+		ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, i-1);
+		ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, i-2);
+		ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, i-3);
+		ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, i-4);
+		ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, i-5);
+		ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, i-6);
+		ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, i-7);
+		ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, i-8);
+		ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, i-9);
+		p11(ctx[sft(10)].s10, i-10);
+		forward();
 	}
 
-	shift(1); ctx[cur].s2 = p2(ctx[cur].s1, n-1);
-	shift(1); ctx[cur].s3 = p3(ctx[cur].s2, n-2);
-	shift(1); ctx[cur].s4 = p4(ctx[cur].s3, n-3);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-4);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-5);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-6);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-7);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-8);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-9);
-	shift(1); p11(ctx[cur].s10, n-10);
+	ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, n-1);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-2);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-3);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-4);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-5);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-6);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-7);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-8);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-9);
+	p11(ctx[sft(10)].s10, n-10);
+	forward();
 
-	shift(2); ctx[cur].s3 = p3(ctx[cur].s2, n-1);
-	shift(1); ctx[cur].s4 = p4(ctx[cur].s3, n-2);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-3);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-4);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-5);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-6);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-7);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-8);
-	shift(1); p11(ctx[cur].s10, n-9);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-1);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-2);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-3);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-4);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-5);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-6);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-7);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-8);
+	p11(ctx[sft(10)].s10, n-9);
+	forward();
 
-	shift(3); ctx[cur].s4 = p4(ctx[cur].s3, n-1);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-2);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-3);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-4);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-5);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-6);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-7);
-	shift(1); p11(ctx[cur].s10, n-8);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-1);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-2);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-3);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-4);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-5);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-6);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-7);
+	p11(ctx[sft(10)].s10, n-8);
+	forward();
 
-	shift(4); ctx[cur].s5 = p5(ctx[cur].s4, n-1);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-2);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-3);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-4);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-5);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-6);
-	shift(1); p11(ctx[cur].s10, n-7);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-1);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-2);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-3);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-4);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-5);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-6);
+	p11(ctx[sft(10)].s10, n-7);
+	forward();
 
-	shift(5); ctx[cur].s6 = p6(ctx[cur].s5, n-1);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-2);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-3);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-4);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-5);
-	shift(1); p11(ctx[cur].s10, n-6);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-1);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-2);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-3);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-4);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-5);
+	p11(ctx[sft(10)].s10, n-6);
+	forward();
 
-	shift(6); ctx[cur].s7 = p7(ctx[cur].s6, n-1);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-2);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-3);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-4);
-	shift(1); p11(ctx[cur].s10, n-5);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-1);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-2);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-3);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-4);
+	p11(ctx[sft(10)].s10, n-5);
+	forward();
 
-	shift(7); ctx[cur].s8 = p8(ctx[cur].s7, n-1);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-2);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-3);
-	shift(1); p11(ctx[cur].s10, n-4);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-1);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-2);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-3);
+	p11(ctx[sft(10)].s10, n-4);
+	forward();
 
-	shift(8); ctx[cur].s9 = p9(ctx[cur].s8, n-1);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-2);
-	shift(1); p11(ctx[cur].s10, n-3);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-1);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-2);
+	p11(ctx[sft(10)].s10, n-3);
+	forward();
 
-	shift(9); ctx[cur].s10 = p10(ctx[cur].s9, n-1);
-	shift(1); p11(ctx[cur].s10, n-2);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-1);
+	p11(ctx[sft(10)].s10, n-2);
+	forward();
 
-	shift(10); p11(ctx[cur].s10, n-1);
+	p11(ctx[sft(10)].s10, n-1);
+	forward();
 }
 
 template <typename P1, typename P2, typename P3, typename P4, typename P5, typename P6, typename P7, typename P8, typename P9, typename P10, typename P11, typename P12>
@@ -1125,103 +1168,112 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const
 	ctx[0].s11 = p11(ctx[0].s10, 0);
 
 	int cur = 11;
-	auto shift = [&cur](int step) {
-		cur -= step;
-		if (cur < 0) {
-			cur += 12;
-		}
-	};
+	auto forward = [&cur]() { if (++cur == 12) cur = 0; };
+	auto sft = [&cur](int step)->int { return CountDown(cur,step,12); };
+
 	for (size_t i = 11; i < n; i++) {
 		ctx[cur].s1 = p1(i);
-		shift(1); ctx[cur].s2 = p2(ctx[cur].s1, i-1);
-		shift(1); ctx[cur].s3 = p3(ctx[cur].s2, i-2);
-		shift(1); ctx[cur].s4 = p4(ctx[cur].s3, i-3);
-		shift(1); ctx[cur].s5 = p5(ctx[cur].s4, i-4);
-		shift(1); ctx[cur].s6 = p6(ctx[cur].s5, i-5);
-		shift(1); ctx[cur].s7 = p7(ctx[cur].s6, i-6);
-		shift(1); ctx[cur].s8 = p8(ctx[cur].s7, i-7);
-		shift(1); ctx[cur].s9 = p9(ctx[cur].s8, i-8);
-		shift(1); ctx[cur].s10 = p10(ctx[cur].s9, i-9);
-		shift(1); ctx[cur].s11 = p11(ctx[cur].s10, i-10);
-		shift(1); p12(ctx[cur].s11, i-11);
+		ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, i-1);
+		ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, i-2);
+		ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, i-3);
+		ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, i-4);
+		ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, i-5);
+		ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, i-6);
+		ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, i-7);
+		ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, i-8);
+		ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, i-9);
+		ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, i-10);
+		p12(ctx[sft(11)].s11, i-11);
+		forward();
 	}
 
-	shift(1); ctx[cur].s2 = p2(ctx[cur].s1, n-1);
-	shift(1); ctx[cur].s3 = p3(ctx[cur].s2, n-2);
-	shift(1); ctx[cur].s4 = p4(ctx[cur].s3, n-3);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-4);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-5);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-6);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-7);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-8);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-9);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-10);
-	shift(1); p12(ctx[cur].s11, n-11);
+	ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, n-1);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-2);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-3);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-4);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-5);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-6);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-7);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-8);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-9);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-10);
+	p12(ctx[sft(11)].s11, n-11);
+	forward();
 
-	shift(2); ctx[cur].s3 = p3(ctx[cur].s2, n-1);
-	shift(1); ctx[cur].s4 = p4(ctx[cur].s3, n-2);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-3);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-4);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-5);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-6);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-7);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-8);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-9);
-	shift(1); p12(ctx[cur].s11, n-10);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-1);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-2);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-3);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-4);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-5);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-6);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-7);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-8);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-9);
+	p12(ctx[sft(11)].s11, n-10);
+	forward();
 
-	shift(3); ctx[cur].s4 = p4(ctx[cur].s3, n-1);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-2);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-3);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-4);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-5);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-6);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-7);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-8);
-	shift(1); p12(ctx[cur].s11, n-9);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-1);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-2);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-3);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-4);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-5);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-6);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-7);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-8);
+	p12(ctx[sft(11)].s11, n-9);
+	forward();
 
-	shift(4); ctx[cur].s5 = p5(ctx[cur].s4, n-1);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-2);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-3);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-4);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-5);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-6);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-7);
-	shift(1); p12(ctx[cur].s11, n-8);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-1);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-2);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-3);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-4);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-5);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-6);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-7);
+	p12(ctx[sft(11)].s11, n-8);
+	forward();
 
-	shift(5); ctx[cur].s6 = p6(ctx[cur].s5, n-1);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-2);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-3);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-4);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-5);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-6);
-	shift(1); p12(ctx[cur].s11, n-7);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-1);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-2);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-3);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-4);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-5);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-6);
+	p12(ctx[sft(11)].s11, n-7);
+	forward();
 
-	shift(6); ctx[cur].s7 = p7(ctx[cur].s6, n-1);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-2);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-3);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-4);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-5);
-	shift(1); p12(ctx[cur].s11, n-6);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-1);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-2);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-3);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-4);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-5);
+	p12(ctx[sft(11)].s11, n-6);
+	forward();
 
-	shift(7); ctx[cur].s8 = p8(ctx[cur].s7, n-1);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-2);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-3);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-4);
-	shift(1); p12(ctx[cur].s11, n-5);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-1);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-2);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-3);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-4);
+	p12(ctx[sft(11)].s11, n-5);
+	forward();
 
-	shift(8); ctx[cur].s9 = p9(ctx[cur].s8, n-1);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-2);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-3);
-	shift(1); p12(ctx[cur].s11, n-4);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-1);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-2);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-3);
+	p12(ctx[sft(11)].s11, n-4);
+	forward();
 
-	shift(9); ctx[cur].s10 = p10(ctx[cur].s9, n-1);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-2);
-	shift(1); p12(ctx[cur].s11, n-3);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-1);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-2);
+	p12(ctx[sft(11)].s11, n-3);
+	forward();
 
-	shift(10); ctx[cur].s11 = p11(ctx[cur].s10, n-1);
-	shift(1); p12(ctx[cur].s11, n-2);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-1);
+	p12(ctx[sft(11)].s11, n-2);
+	forward();
 
-	shift(11); p12(ctx[cur].s11, n-1);
+	p12(ctx[sft(11)].s11, n-1);
+	forward();
 }
 
 template <typename P1, typename P2, typename P3, typename P4, typename P5, typename P6, typename P7, typename P8, typename P9, typename P10, typename P11, typename P12, typename P13>
@@ -1351,117 +1403,127 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const
 	ctx[0].s12 = p12(ctx[0].s11, 0);
 
 	int cur = 12;
-	auto shift = [&cur](int step) {
-		cur -= step;
-		if (cur < 0) {
-			cur += 13;
-		}
-	};
+	auto forward = [&cur]() { if (++cur == 13) cur = 0; };
+	auto sft = [&cur](int step)->int { return CountDown(cur,step,13); };
+
 	for (size_t i = 12; i < n; i++) {
 		ctx[cur].s1 = p1(i);
-		shift(1); ctx[cur].s2 = p2(ctx[cur].s1, i-1);
-		shift(1); ctx[cur].s3 = p3(ctx[cur].s2, i-2);
-		shift(1); ctx[cur].s4 = p4(ctx[cur].s3, i-3);
-		shift(1); ctx[cur].s5 = p5(ctx[cur].s4, i-4);
-		shift(1); ctx[cur].s6 = p6(ctx[cur].s5, i-5);
-		shift(1); ctx[cur].s7 = p7(ctx[cur].s6, i-6);
-		shift(1); ctx[cur].s8 = p8(ctx[cur].s7, i-7);
-		shift(1); ctx[cur].s9 = p9(ctx[cur].s8, i-8);
-		shift(1); ctx[cur].s10 = p10(ctx[cur].s9, i-9);
-		shift(1); ctx[cur].s11 = p11(ctx[cur].s10, i-10);
-		shift(1); ctx[cur].s12 = p12(ctx[cur].s11, i-11);
-		shift(1); p13(ctx[cur].s12, i-12);
+		ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, i-1);
+		ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, i-2);
+		ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, i-3);
+		ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, i-4);
+		ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, i-5);
+		ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, i-6);
+		ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, i-7);
+		ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, i-8);
+		ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, i-9);
+		ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, i-10);
+		ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, i-11);
+		p13(ctx[sft(12)].s12, i-12);
+		forward();
 	}
 
-	shift(1); ctx[cur].s2 = p2(ctx[cur].s1, n-1);
-	shift(1); ctx[cur].s3 = p3(ctx[cur].s2, n-2);
-	shift(1); ctx[cur].s4 = p4(ctx[cur].s3, n-3);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-4);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-5);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-6);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-7);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-8);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-9);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-10);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-11);
-	shift(1); p13(ctx[cur].s12, n-12);
+	ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, n-1);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-2);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-3);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-4);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-5);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-6);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-7);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-8);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-9);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-10);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-11);
+	p13(ctx[sft(12)].s12, n-12);
+	forward();
 
-	shift(2); ctx[cur].s3 = p3(ctx[cur].s2, n-1);
-	shift(1); ctx[cur].s4 = p4(ctx[cur].s3, n-2);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-3);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-4);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-5);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-6);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-7);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-8);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-9);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-10);
-	shift(1); p13(ctx[cur].s12, n-11);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-1);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-2);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-3);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-4);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-5);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-6);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-7);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-8);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-9);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-10);
+	p13(ctx[sft(12)].s12, n-11);
+	forward();
 
-	shift(3); ctx[cur].s4 = p4(ctx[cur].s3, n-1);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-2);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-3);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-4);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-5);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-6);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-7);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-8);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-9);
-	shift(1); p13(ctx[cur].s12, n-10);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-1);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-2);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-3);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-4);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-5);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-6);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-7);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-8);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-9);
+	p13(ctx[sft(12)].s12, n-10);
+	forward();
 
-	shift(4); ctx[cur].s5 = p5(ctx[cur].s4, n-1);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-2);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-3);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-4);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-5);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-6);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-7);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-8);
-	shift(1); p13(ctx[cur].s12, n-9);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-1);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-2);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-3);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-4);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-5);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-6);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-7);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-8);
+	p13(ctx[sft(12)].s12, n-9);
+	forward();
 
-	shift(5); ctx[cur].s6 = p6(ctx[cur].s5, n-1);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-2);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-3);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-4);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-5);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-6);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-7);
-	shift(1); p13(ctx[cur].s12, n-8);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-1);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-2);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-3);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-4);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-5);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-6);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-7);
+	p13(ctx[sft(12)].s12, n-8);
+	forward();
 
-	shift(6); ctx[cur].s7 = p7(ctx[cur].s6, n-1);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-2);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-3);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-4);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-5);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-6);
-	shift(1); p13(ctx[cur].s12, n-7);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-1);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-2);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-3);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-4);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-5);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-6);
+	p13(ctx[sft(12)].s12, n-7);
+	forward();
 
-	shift(7); ctx[cur].s8 = p8(ctx[cur].s7, n-1);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-2);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-3);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-4);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-5);
-	shift(1); p13(ctx[cur].s12, n-6);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-1);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-2);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-3);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-4);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-5);
+	p13(ctx[sft(12)].s12, n-6);
+	forward();
 
-	shift(8); ctx[cur].s9 = p9(ctx[cur].s8, n-1);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-2);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-3);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-4);
-	shift(1); p13(ctx[cur].s12, n-5);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-1);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-2);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-3);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-4);
+	p13(ctx[sft(12)].s12, n-5);
+	forward();
 
-	shift(9); ctx[cur].s10 = p10(ctx[cur].s9, n-1);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-2);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-3);
-	shift(1); p13(ctx[cur].s12, n-4);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-1);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-2);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-3);
+	p13(ctx[sft(12)].s12, n-4);
+	forward();
 
-	shift(10); ctx[cur].s11 = p11(ctx[cur].s10, n-1);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-2);
-	shift(1); p13(ctx[cur].s12, n-3);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-1);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-2);
+	p13(ctx[sft(12)].s12, n-3);
+	forward();
 
-	shift(11); ctx[cur].s12 = p12(ctx[cur].s11, n-1);
-	shift(1); p13(ctx[cur].s12, n-2);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-1);
+	p13(ctx[sft(12)].s12, n-2);
+	forward();
 
-	shift(12); p13(ctx[cur].s12, n-1);
+	p13(ctx[sft(12)].s12, n-1);
+	forward();
 }
 
 template <typename P1, typename P2, typename P3, typename P4, typename P5, typename P6, typename P7, typename P8, typename P9, typename P10, typename P11, typename P12, typename P13, typename P14>
@@ -1607,132 +1669,143 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const
 	ctx[0].s13 = p13(ctx[0].s12, 0);
 
 	int cur = 13;
-	auto shift = [&cur](int step) {
-		cur -= step;
-		if (cur < 0) {
-			cur += 14;
-		}
-	};
+	auto forward = [&cur]() { if (++cur == 14) cur = 0; };
+	auto sft = [&cur](int step)->int { return CountDown(cur,step,14); };
+
 	for (size_t i = 13; i < n; i++) {
 		ctx[cur].s1 = p1(i);
-		shift(1); ctx[cur].s2 = p2(ctx[cur].s1, i-1);
-		shift(1); ctx[cur].s3 = p3(ctx[cur].s2, i-2);
-		shift(1); ctx[cur].s4 = p4(ctx[cur].s3, i-3);
-		shift(1); ctx[cur].s5 = p5(ctx[cur].s4, i-4);
-		shift(1); ctx[cur].s6 = p6(ctx[cur].s5, i-5);
-		shift(1); ctx[cur].s7 = p7(ctx[cur].s6, i-6);
-		shift(1); ctx[cur].s8 = p8(ctx[cur].s7, i-7);
-		shift(1); ctx[cur].s9 = p9(ctx[cur].s8, i-8);
-		shift(1); ctx[cur].s10 = p10(ctx[cur].s9, i-9);
-		shift(1); ctx[cur].s11 = p11(ctx[cur].s10, i-10);
-		shift(1); ctx[cur].s12 = p12(ctx[cur].s11, i-11);
-		shift(1); ctx[cur].s13 = p13(ctx[cur].s12, i-12);
-		shift(1); p14(ctx[cur].s13, i-13);
+		ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, i-1);
+		ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, i-2);
+		ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, i-3);
+		ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, i-4);
+		ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, i-5);
+		ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, i-6);
+		ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, i-7);
+		ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, i-8);
+		ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, i-9);
+		ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, i-10);
+		ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, i-11);
+		ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, i-12);
+		p14(ctx[sft(13)].s13, i-13);
+		forward();
 	}
 
-	shift(1); ctx[cur].s2 = p2(ctx[cur].s1, n-1);
-	shift(1); ctx[cur].s3 = p3(ctx[cur].s2, n-2);
-	shift(1); ctx[cur].s4 = p4(ctx[cur].s3, n-3);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-4);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-5);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-6);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-7);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-8);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-9);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-10);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-11);
-	shift(1); ctx[cur].s13 = p13(ctx[cur].s12, n-12);
-	shift(1); p14(ctx[cur].s13, n-13);
+	ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, n-1);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-2);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-3);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-4);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-5);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-6);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-7);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-8);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-9);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-10);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-11);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-12);
+	p14(ctx[sft(13)].s13, n-13);
+	forward();
 
-	shift(2); ctx[cur].s3 = p3(ctx[cur].s2, n-1);
-	shift(1); ctx[cur].s4 = p4(ctx[cur].s3, n-2);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-3);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-4);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-5);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-6);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-7);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-8);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-9);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-10);
-	shift(1); ctx[cur].s13 = p13(ctx[cur].s12, n-11);
-	shift(1); p14(ctx[cur].s13, n-12);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-1);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-2);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-3);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-4);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-5);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-6);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-7);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-8);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-9);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-10);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-11);
+	p14(ctx[sft(13)].s13, n-12);
+	forward();
 
-	shift(3); ctx[cur].s4 = p4(ctx[cur].s3, n-1);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-2);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-3);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-4);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-5);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-6);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-7);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-8);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-9);
-	shift(1); ctx[cur].s13 = p13(ctx[cur].s12, n-10);
-	shift(1); p14(ctx[cur].s13, n-11);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-1);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-2);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-3);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-4);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-5);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-6);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-7);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-8);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-9);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-10);
+	p14(ctx[sft(13)].s13, n-11);
+	forward();
 
-	shift(4); ctx[cur].s5 = p5(ctx[cur].s4, n-1);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-2);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-3);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-4);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-5);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-6);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-7);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-8);
-	shift(1); ctx[cur].s13 = p13(ctx[cur].s12, n-9);
-	shift(1); p14(ctx[cur].s13, n-10);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-1);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-2);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-3);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-4);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-5);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-6);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-7);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-8);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-9);
+	p14(ctx[sft(13)].s13, n-10);
+	forward();
 
-	shift(5); ctx[cur].s6 = p6(ctx[cur].s5, n-1);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-2);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-3);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-4);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-5);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-6);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-7);
-	shift(1); ctx[cur].s13 = p13(ctx[cur].s12, n-8);
-	shift(1); p14(ctx[cur].s13, n-9);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-1);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-2);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-3);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-4);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-5);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-6);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-7);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-8);
+	p14(ctx[sft(13)].s13, n-9);
+	forward();
 
-	shift(6); ctx[cur].s7 = p7(ctx[cur].s6, n-1);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-2);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-3);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-4);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-5);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-6);
-	shift(1); ctx[cur].s13 = p13(ctx[cur].s12, n-7);
-	shift(1); p14(ctx[cur].s13, n-8);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-1);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-2);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-3);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-4);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-5);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-6);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-7);
+	p14(ctx[sft(13)].s13, n-8);
+	forward();
 
-	shift(7); ctx[cur].s8 = p8(ctx[cur].s7, n-1);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-2);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-3);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-4);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-5);
-	shift(1); ctx[cur].s13 = p13(ctx[cur].s12, n-6);
-	shift(1); p14(ctx[cur].s13, n-7);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-1);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-2);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-3);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-4);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-5);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-6);
+	p14(ctx[sft(13)].s13, n-7);
+	forward();
 
-	shift(8); ctx[cur].s9 = p9(ctx[cur].s8, n-1);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-2);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-3);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-4);
-	shift(1); ctx[cur].s13 = p13(ctx[cur].s12, n-5);
-	shift(1); p14(ctx[cur].s13, n-6);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-1);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-2);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-3);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-4);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-5);
+	p14(ctx[sft(13)].s13, n-6);
+	forward();
 
-	shift(9); ctx[cur].s10 = p10(ctx[cur].s9, n-1);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-2);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-3);
-	shift(1); ctx[cur].s13 = p13(ctx[cur].s12, n-4);
-	shift(1); p14(ctx[cur].s13, n-5);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-1);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-2);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-3);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-4);
+	p14(ctx[sft(13)].s13, n-5);
+	forward();
 
-	shift(10); ctx[cur].s11 = p11(ctx[cur].s10, n-1);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-2);
-	shift(1); ctx[cur].s13 = p13(ctx[cur].s12, n-3);
-	shift(1); p14(ctx[cur].s13, n-4);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-1);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-2);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-3);
+	p14(ctx[sft(13)].s13, n-4);
+	forward();
 
-	shift(11); ctx[cur].s12 = p12(ctx[cur].s11, n-1);
-	shift(1); ctx[cur].s13 = p13(ctx[cur].s12, n-2);
-	shift(1); p14(ctx[cur].s13, n-3);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-1);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-2);
+	p14(ctx[sft(13)].s13, n-3);
+	forward();
 
-	shift(12); ctx[cur].s13 = p13(ctx[cur].s12, n-1);
-	shift(1); p14(ctx[cur].s13, n-2);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-1);
+	p14(ctx[sft(13)].s13, n-2);
+	forward();
 
-	shift(13); p14(ctx[cur].s13, n-1);
+	p14(ctx[sft(13)].s13, n-1);
+	forward();
 }
 
 template <typename P1, typename P2, typename P3, typename P4, typename P5, typename P6, typename P7, typename P8, typename P9, typename P10, typename P11, typename P12, typename P13, typename P14, typename P15>
@@ -1895,148 +1968,160 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const
 	ctx[0].s14 = p14(ctx[0].s13, 0);
 
 	int cur = 14;
-	auto shift = [&cur](int step) {
-		cur -= step;
-		if (cur < 0) {
-			cur += 15;
-		}
-	};
+	auto forward = [&cur]() { if (++cur == 15) cur = 0; };
+	auto sft = [&cur](int step)->int { return CountDown(cur,step,15); };
+
 	for (size_t i = 14; i < n; i++) {
 		ctx[cur].s1 = p1(i);
-		shift(1); ctx[cur].s2 = p2(ctx[cur].s1, i-1);
-		shift(1); ctx[cur].s3 = p3(ctx[cur].s2, i-2);
-		shift(1); ctx[cur].s4 = p4(ctx[cur].s3, i-3);
-		shift(1); ctx[cur].s5 = p5(ctx[cur].s4, i-4);
-		shift(1); ctx[cur].s6 = p6(ctx[cur].s5, i-5);
-		shift(1); ctx[cur].s7 = p7(ctx[cur].s6, i-6);
-		shift(1); ctx[cur].s8 = p8(ctx[cur].s7, i-7);
-		shift(1); ctx[cur].s9 = p9(ctx[cur].s8, i-8);
-		shift(1); ctx[cur].s10 = p10(ctx[cur].s9, i-9);
-		shift(1); ctx[cur].s11 = p11(ctx[cur].s10, i-10);
-		shift(1); ctx[cur].s12 = p12(ctx[cur].s11, i-11);
-		shift(1); ctx[cur].s13 = p13(ctx[cur].s12, i-12);
-		shift(1); ctx[cur].s14 = p14(ctx[cur].s13, i-13);
-		shift(1); p15(ctx[cur].s14, i-14);
+		ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, i-1);
+		ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, i-2);
+		ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, i-3);
+		ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, i-4);
+		ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, i-5);
+		ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, i-6);
+		ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, i-7);
+		ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, i-8);
+		ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, i-9);
+		ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, i-10);
+		ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, i-11);
+		ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, i-12);
+		ctx[sft(13)].s14 = p14(ctx[sft(13)].s13, i-13);
+		p15(ctx[sft(14)].s14, i-14);
+		forward();
 	}
 
-	shift(1); ctx[cur].s2 = p2(ctx[cur].s1, n-1);
-	shift(1); ctx[cur].s3 = p3(ctx[cur].s2, n-2);
-	shift(1); ctx[cur].s4 = p4(ctx[cur].s3, n-3);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-4);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-5);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-6);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-7);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-8);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-9);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-10);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-11);
-	shift(1); ctx[cur].s13 = p13(ctx[cur].s12, n-12);
-	shift(1); ctx[cur].s14 = p14(ctx[cur].s13, n-13);
-	shift(1); p15(ctx[cur].s14, n-14);
+	ctx[sft(1)].s2 = p2(ctx[sft(1)].s1, n-1);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-2);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-3);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-4);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-5);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-6);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-7);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-8);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-9);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-10);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-11);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-12);
+	ctx[sft(13)].s14 = p14(ctx[sft(13)].s13, n-13);
+	p15(ctx[sft(14)].s14, n-14);
+	forward();
 
-	shift(2); ctx[cur].s3 = p3(ctx[cur].s2, n-1);
-	shift(1); ctx[cur].s4 = p4(ctx[cur].s3, n-2);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-3);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-4);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-5);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-6);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-7);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-8);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-9);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-10);
-	shift(1); ctx[cur].s13 = p13(ctx[cur].s12, n-11);
-	shift(1); ctx[cur].s14 = p14(ctx[cur].s13, n-12);
-	shift(1); p15(ctx[cur].s14, n-13);
+	ctx[sft(2)].s3 = p3(ctx[sft(2)].s2, n-1);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-2);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-3);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-4);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-5);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-6);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-7);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-8);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-9);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-10);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-11);
+	ctx[sft(13)].s14 = p14(ctx[sft(13)].s13, n-12);
+	p15(ctx[sft(14)].s14, n-13);
+	forward();
 
-	shift(3); ctx[cur].s4 = p4(ctx[cur].s3, n-1);
-	shift(1); ctx[cur].s5 = p5(ctx[cur].s4, n-2);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-3);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-4);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-5);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-6);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-7);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-8);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-9);
-	shift(1); ctx[cur].s13 = p13(ctx[cur].s12, n-10);
-	shift(1); ctx[cur].s14 = p14(ctx[cur].s13, n-11);
-	shift(1); p15(ctx[cur].s14, n-12);
+	ctx[sft(3)].s4 = p4(ctx[sft(3)].s3, n-1);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-2);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-3);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-4);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-5);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-6);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-7);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-8);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-9);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-10);
+	ctx[sft(13)].s14 = p14(ctx[sft(13)].s13, n-11);
+	p15(ctx[sft(14)].s14, n-12);
+	forward();
 
-	shift(4); ctx[cur].s5 = p5(ctx[cur].s4, n-1);
-	shift(1); ctx[cur].s6 = p6(ctx[cur].s5, n-2);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-3);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-4);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-5);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-6);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-7);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-8);
-	shift(1); ctx[cur].s13 = p13(ctx[cur].s12, n-9);
-	shift(1); ctx[cur].s14 = p14(ctx[cur].s13, n-10);
-	shift(1); p15(ctx[cur].s14, n-11);
+	ctx[sft(4)].s5 = p5(ctx[sft(4)].s4, n-1);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-2);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-3);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-4);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-5);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-6);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-7);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-8);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-9);
+	ctx[sft(13)].s14 = p14(ctx[sft(13)].s13, n-10);
+	p15(ctx[sft(14)].s14, n-11);
+	forward();
 
-	shift(5); ctx[cur].s6 = p6(ctx[cur].s5, n-1);
-	shift(1); ctx[cur].s7 = p7(ctx[cur].s6, n-2);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-3);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-4);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-5);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-6);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-7);
-	shift(1); ctx[cur].s13 = p13(ctx[cur].s12, n-8);
-	shift(1); ctx[cur].s14 = p14(ctx[cur].s13, n-9);
-	shift(1); p15(ctx[cur].s14, n-10);
+	ctx[sft(5)].s6 = p6(ctx[sft(5)].s5, n-1);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-2);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-3);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-4);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-5);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-6);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-7);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-8);
+	ctx[sft(13)].s14 = p14(ctx[sft(13)].s13, n-9);
+	p15(ctx[sft(14)].s14, n-10);
+	forward();
 
-	shift(6); ctx[cur].s7 = p7(ctx[cur].s6, n-1);
-	shift(1); ctx[cur].s8 = p8(ctx[cur].s7, n-2);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-3);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-4);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-5);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-6);
-	shift(1); ctx[cur].s13 = p13(ctx[cur].s12, n-7);
-	shift(1); ctx[cur].s14 = p14(ctx[cur].s13, n-8);
-	shift(1); p15(ctx[cur].s14, n-9);
+	ctx[sft(6)].s7 = p7(ctx[sft(6)].s6, n-1);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-2);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-3);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-4);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-5);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-6);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-7);
+	ctx[sft(13)].s14 = p14(ctx[sft(13)].s13, n-8);
+	p15(ctx[sft(14)].s14, n-9);
+	forward();
 
-	shift(7); ctx[cur].s8 = p8(ctx[cur].s7, n-1);
-	shift(1); ctx[cur].s9 = p9(ctx[cur].s8, n-2);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-3);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-4);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-5);
-	shift(1); ctx[cur].s13 = p13(ctx[cur].s12, n-6);
-	shift(1); ctx[cur].s14 = p14(ctx[cur].s13, n-7);
-	shift(1); p15(ctx[cur].s14, n-8);
+	ctx[sft(7)].s8 = p8(ctx[sft(7)].s7, n-1);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-2);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-3);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-4);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-5);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-6);
+	ctx[sft(13)].s14 = p14(ctx[sft(13)].s13, n-7);
+	p15(ctx[sft(14)].s14, n-8);
+	forward();
 
-	shift(8); ctx[cur].s9 = p9(ctx[cur].s8, n-1);
-	shift(1); ctx[cur].s10 = p10(ctx[cur].s9, n-2);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-3);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-4);
-	shift(1); ctx[cur].s13 = p13(ctx[cur].s12, n-5);
-	shift(1); ctx[cur].s14 = p14(ctx[cur].s13, n-6);
-	shift(1); p15(ctx[cur].s14, n-7);
+	ctx[sft(8)].s9 = p9(ctx[sft(8)].s8, n-1);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-2);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-3);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-4);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-5);
+	ctx[sft(13)].s14 = p14(ctx[sft(13)].s13, n-6);
+	p15(ctx[sft(14)].s14, n-7);
+	forward();
 
-	shift(9); ctx[cur].s10 = p10(ctx[cur].s9, n-1);
-	shift(1); ctx[cur].s11 = p11(ctx[cur].s10, n-2);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-3);
-	shift(1); ctx[cur].s13 = p13(ctx[cur].s12, n-4);
-	shift(1); ctx[cur].s14 = p14(ctx[cur].s13, n-5);
-	shift(1); p15(ctx[cur].s14, n-6);
+	ctx[sft(9)].s10 = p10(ctx[sft(9)].s9, n-1);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-2);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-3);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-4);
+	ctx[sft(13)].s14 = p14(ctx[sft(13)].s13, n-5);
+	p15(ctx[sft(14)].s14, n-6);
+	forward();
 
-	shift(10); ctx[cur].s11 = p11(ctx[cur].s10, n-1);
-	shift(1); ctx[cur].s12 = p12(ctx[cur].s11, n-2);
-	shift(1); ctx[cur].s13 = p13(ctx[cur].s12, n-3);
-	shift(1); ctx[cur].s14 = p14(ctx[cur].s13, n-4);
-	shift(1); p15(ctx[cur].s14, n-5);
+	ctx[sft(10)].s11 = p11(ctx[sft(10)].s10, n-1);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-2);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-3);
+	ctx[sft(13)].s14 = p14(ctx[sft(13)].s13, n-4);
+	p15(ctx[sft(14)].s14, n-5);
+	forward();
 
-	shift(11); ctx[cur].s12 = p12(ctx[cur].s11, n-1);
-	shift(1); ctx[cur].s13 = p13(ctx[cur].s12, n-2);
-	shift(1); ctx[cur].s14 = p14(ctx[cur].s13, n-3);
-	shift(1); p15(ctx[cur].s14, n-4);
+	ctx[sft(11)].s12 = p12(ctx[sft(11)].s11, n-1);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-2);
+	ctx[sft(13)].s14 = p14(ctx[sft(13)].s13, n-3);
+	p15(ctx[sft(14)].s14, n-4);
+	forward();
 
-	shift(12); ctx[cur].s13 = p13(ctx[cur].s12, n-1);
-	shift(1); ctx[cur].s14 = p14(ctx[cur].s13, n-2);
-	shift(1); p15(ctx[cur].s14, n-3);
+	ctx[sft(12)].s13 = p13(ctx[sft(12)].s12, n-1);
+	ctx[sft(13)].s14 = p14(ctx[sft(13)].s13, n-2);
+	p15(ctx[sft(14)].s14, n-3);
+	forward();
 
-	shift(13); ctx[cur].s14 = p14(ctx[cur].s13, n-1);
-	shift(1); p15(ctx[cur].s14, n-2);
+	ctx[sft(13)].s14 = p14(ctx[sft(13)].s13, n-1);
+	p15(ctx[sft(14)].s14, n-2);
+	forward();
 
-	shift(14); p15(ctx[cur].s14, n-1);
+	p15(ctx[sft(14)].s14, n-1);
+	forward();
 }
 
 #endif //CHD_PIPELINE_H_

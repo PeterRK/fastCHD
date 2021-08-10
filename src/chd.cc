@@ -61,7 +61,6 @@ std::unique_ptr<uint8_t[]> CreatePackView(const uint8_t* addr, size_t size) {
 	uint64_t total_item = 0;
 	for (unsigned i = 0; i < header->seg_cnt; i++) {
 		index->segments[i] = SegmentView{};
-		index->segments[i].item = parts[i];
 		index->segments[i].l1sz = L1Size(parts[i]);
 		index->segments[i].l2sz = L2Size(parts[i]);
 		index->segments[i].offset = total_item;

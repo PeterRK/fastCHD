@@ -224,7 +224,6 @@ struct SegmentView {
 	const BitmapSection* sections = nullptr;
 	Divisor<uint64_t> l2sz;
 	Divisor<uint32_t> l1sz;
-	uint32_t item = 0;
 	uint64_t offset = 0; //item offset
 };
 

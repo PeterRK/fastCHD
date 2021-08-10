@@ -22,9 +22,28 @@ project(fastCHD)
 set(CMAKE_CXX_STANDARD 17)
 
 set(CMAKE_SKIP_BUILD_RPATH TRUE)
-
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-unroll-loops -msse4.2 -mbmi2")
 set(CMAKE_EXE_LINKER_FLAGS -Wl,--rpath=.)
+
+option(MODERN_CPU_ONLY "build for modern CPU only" ON)
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-unroll-loops -fno-stack-protector")
+if (CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
+	if (MODERN_CPU_ONLY)
+		message("NOTICE: build for modern CPU not older than skylake")
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=skylake")
+		#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mpopcnt -mbmi2")
+    endif()
+endif()
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --param case-values-threshold=3")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --param max-inline-insns-size=64")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --param large-function-insns=5000")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --param large-function-growth=200")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --param large-unit-insns=30000")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --param inline-unit-growth=100")
+endif()
+
 
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
