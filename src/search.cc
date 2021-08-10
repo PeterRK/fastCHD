@@ -65,24 +65,16 @@ static FORCE_INLINE Step2 Process2(const Step1& in) {
 
 static FORCE_INLINE uint64_t CalcPos(const Step2& in) {
 	auto& section = in.seg->sections[in.section];
-	uint32_t cnt = section.step;
-	if (in.bit_off < 32U) {
-		int32_t mask = 0x80000000;
-		mask >>= 31U - (in.bit_off&31U);
-		cnt += PopCount32(section.b32[0] & ~mask);
-	} else {
-		cnt += PopCount32(section.b32[0]);
-		auto v = (const uint64_t*)(section.b32 + 1);
-		uint8_t off = in.bit_off - 32U;
-		switch (off/64U) {
-			case 3:
-			case 2: cnt += PopCount64(*v++);
-			case 1: cnt += PopCount64(*v++);
-			case 0:
-				int64_t mask = 0x8000000000000000LL;
-				mask >>= 63U - (off&63U);
-				cnt += PopCount64(*v & ~mask);
-		}
+	uint32_t cnt = section.step;	//step is the last field of section
+	auto v = (const uint64_t*)section.b32;
+	switch ((in.bit_off >> 6U) & 3U) {
+		case 3: cnt += PopCount64(*v++);
+		case 2: cnt += PopCount64(*v++);
+		case 1: cnt += PopCount64(*v++);
+		case 0:
+			int64_t mask = 0x8000000000000000LL;
+			mask >>= 63U - (in.bit_off & 63U);
+			cnt += PopCount64(*v & ~mask);
 	}
 	return in.seg->offset + cnt;
 }

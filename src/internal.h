@@ -152,8 +152,8 @@ static FORCE_INLINE constexpr uint64_t L2Size(uint32_t item) {
 }
 
 struct BitmapSection {
-	uint32_t step;
 	uint32_t b32[7];
+	uint32_t step;
 };
 static constexpr unsigned BITMAP_SECTION_SIZE = 28U * 8U;
 static FORCE_INLINE constexpr uint32_t SectionSize(uint32_t item) {

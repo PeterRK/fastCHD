@@ -44,6 +44,16 @@ TEST(CHD, Build) {
 	ASSERT_EQ(chd::BuildDict(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
 	ASSERT_EQ(chd::BuildDictWithVariedValue(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
 
+	fake_input.push_back(std::make_unique<EmbeddingGenerator>(0, 0));
+	ASSERT_EQ(chd::BuildSet(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
+	ASSERT_EQ(chd::BuildDict(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
+	ASSERT_EQ(chd::BuildDictWithVariedValue(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
+
+	fake_input.push_back(std::make_unique<EmbeddingGenerator>(0, 1));
+	ASSERT_EQ(chd::BuildSet(fake_input, fake_output), chd::BUILD_STATUS_OK);
+	ASSERT_EQ(chd::BuildDict(fake_input, fake_output), chd::BUILD_STATUS_OK);
+	ASSERT_EQ(chd::BuildDictWithVariedValue(fake_input, fake_output), chd::BUILD_STATUS_OK);
+
 	auto emb_gen = CreateReaders<EmbeddingGenerator>(1, EmbeddingGenerator::MASK0);
 	ASSERT_EQ(chd::BuildSet(emb_gen, fake_output), chd::BUILD_STATUS_OK);
 	ASSERT_EQ(chd::BuildDict(emb_gen, fake_output), chd::BUILD_STATUS_OK);
@@ -110,6 +120,43 @@ TEST(CHD, KeySet) {
 	}
 
 	ASSERT_EQ(dict.batch_fetch(keys.size(), (const uint8_t*)keys.data(), (uint8_t*)out.data()), 0);
+}
+
+TEST(CHD, SmallSet) {
+	chd::DataReaders input(1);
+	const uint64_t shift = 9999;
+	const unsigned limit = 16;
+	std::vector<uint64_t> keys(limit);
+	for (unsigned i = 0; i < limit; i++) {
+		keys[i] = shift + i;
+	}
+	std::vector<const uint8_t*> in(keys.size());
+	for (unsigned i = 0; i < keys.size(); i++) {
+		in[i] = (const uint8_t*)&keys[i];
+	}
+	std::vector<const uint8_t*> out(keys.size());
+	const std::string filename = "small.chd";
+	for (unsigned i = 1; i < limit; i++) {
+		input[0] = std::make_unique<EmbeddingGenerator>(shift, i);
+		{
+			chd::FileWriter output(filename.c_str());
+			ASSERT_EQ(chd::BuildSet(input, output), chd::BUILD_STATUS_OK);
+		}
+		{
+			chd::PerfectHashtable dict(filename);
+			ASSERT_FALSE(!dict);
+			for (auto& p : out) {
+				p = nullptr;
+			}
+			ASSERT_EQ(dict.batch_search(keys.size(), in.data(), out.data()), i);
+			for (unsigned j = 0; j < i; j++) {
+				ASSERT_NE(out[j], nullptr);
+			}
+			for (unsigned j = i; j < limit; j++) {
+				ASSERT_EQ(out[j], nullptr);
+			}
+		}
+	}
 }
 
 TEST(CHD, InlinedDict) {
