@@ -167,17 +167,31 @@ private:
 	bool _write(const void* data, size_t n) noexcept;
 };
 
+#ifdef CHD_PACK_SIZE
+#pragma pack(CHD_PACK_SIZE)
+#endif
 
-//Granlund-Montgomery
+//Modified Robison
 template <typename Word>
-class DivisorGM {
+class DivisorMR {
 private:
-	static_assert(std::is_same<Word,uint8_t>::value | std::is_same<Word,uint16_t>::value
+	static_assert(std::is_same<Word,uint8_t>::value || std::is_same<Word,uint16_t>::value
 				  || std::is_same<Word,uint32_t>::value || std::is_same<Word,uint64_t>::value);
 	Word m_val = 0;
 #ifndef DISABLE_SOFT_DIVIDE
 	Word m_fac = 0;
+#ifdef CHD_PACK_SIZE
+	Word m_tip = 0;
 	unsigned m_sft = 0;
+#else
+	union {
+		struct {
+			uint8_t m_sft : 7;
+			uint8_t m_ab : 1;
+		};
+		uint8_t m_ = 0;  //just for initializing
+	};
+#endif
 	using DoubleWord = typename std::conditional<std::is_same<Word,uint8_t>::value, uint16_t,
 		typename std::conditional<std::is_same<Word,uint16_t>::value, uint32_t,
 		typename std::conditional<std::is_same<Word,uint32_t>::value, uint64_t, __uint128_t>::type>::type>::type;
@@ -188,19 +202,44 @@ protected:
 	void _init(Word n) noexcept {
 		m_val = n;
 #ifndef DISABLE_SOFT_DIVIDE
+		m_fac = 0;
+		m_sft = 0;
+#ifdef CHD_PACK_SIZE
+		m_tip = 0;
+#else
+		m_ab = 0;
+#endif
 		if (n == 0) {
-			m_fac = 0;
-			m_sft = 0;
-		} else {
-			m_sft = BITWIDTH - 1;
-			constexpr Word one = 1;
-			for (auto t = one << m_sft; t > n; t >>= 1U) {
-				m_sft--;
-			}
-			constexpr DoubleWord dw_one = 1;
-			const DoubleWord c = dw_one << (m_sft + BITWIDTH);
-			m_fac = 2 * (c / n) + (2 * (c % n)) / n + 1 - (dw_one << BITWIDTH);
+			return;
 		}
+		m_sft = BITWIDTH - 1;
+		constexpr Word one = 1;
+		auto m  = one << m_sft;
+		for (; m > n; m >>= 1U) {
+			m_sft--;
+		}
+		constexpr Word zero = 0;
+		m_fac = ~zero;
+#ifdef CHD_PACK_SIZE
+		m_tip = ~zero;
+#endif
+		if (m == n) {
+			return;
+		}
+		m_fac = (((DoubleWord)m) << BITWIDTH) / n;
+		Word r = m_fac * n + n;
+#ifdef CHD_PACK_SIZE
+		if (r <= m) {
+			m_fac += 1;
+			m_tip = 0;
+		} else {
+			m_tip = m_fac;
+		}
+#else
+		if (r <= m) {
+			m_ab = 1;
+		}
+#endif
 #endif
 	}
 
@@ -211,11 +250,15 @@ public:
 #ifdef DISABLE_SOFT_DIVIDE
 		return m / m_val;
 #else
-		Word t = (m * (DoubleWord)m_fac) >> BITWIDTH;
-		t += (m - t) >> 1U;
-		if (m_fac <= 1U) {
+#ifdef CHD_PACK_SIZE
+		auto t = m_tip;
+#else
+		auto t = m_fac;
+		if (m_ab) {
 			t = m;
 		}
+#endif
+		t = (m_fac * (DoubleWord)m + t) >> BITWIDTH;
 		return t >> m_sft;
 #endif
 	}
@@ -224,15 +267,16 @@ public:
 #ifdef DISABLE_SOFT_DIVIDE
 		return m % m_val;
 #else
-		Word t = (m * (DoubleWord)m_fac) >> BITWIDTH;
-		t += (m - t) >> 1U;
-		auto out = m - m_val * (t >> m_sft);
-		constexpr Word one = 1U;
-		const auto tmp = m & ((one << m_sft) - 1U);
-		if (m_fac <= 1U) {
-			out = tmp;
+#ifdef CHD_PACK_SIZE
+		auto t = m_tip;
+#else
+		auto t = m_fac;
+		if (m_ab) {
+			t = m;
 		}
-		return out;
+#endif
+		t = (m_fac * (DoubleWord)m + t) >> BITWIDTH;
+		return m - m_val * (t >> m_sft);
 #endif
 	}
 };
@@ -241,7 +285,7 @@ public:
 template <typename Word>
 class DivisorLKK {
 private:
-	static_assert(std::is_same<Word, uint8_t>::value | std::is_same<Word, uint16_t>::value
+	static_assert(std::is_same<Word, uint8_t>::value || std::is_same<Word, uint16_t>::value
 				  || std::is_same<Word, uint32_t>::value);
 	Word m_val = 0;
 #ifndef DISABLE_SOFT_DIVIDE
@@ -272,7 +316,11 @@ public:
 #ifdef DISABLE_SOFT_DIVIDE
 		return m / m_val;
 #else
-		return m_fac == 0 ? m : (m * (QuaterWord)m_fac) >> (BITWIDTH * 2);
+		Word q = (m * (QuaterWord)m_fac) >> (BITWIDTH * 2);
+		if (m_fac == 0) {
+			q = m;
+		}
+		return q;
 #endif
 	}
 
@@ -285,6 +333,7 @@ public:
 	}
 };
 
+
 template <typename Word>
 struct Divisor : public DivisorLKK<Word> {
 	Divisor() noexcept = default;
@@ -296,7 +345,7 @@ struct Divisor : public DivisorLKK<Word> {
 };
 
 template <>
-struct Divisor<uint64_t> : public DivisorGM<uint64_t> {
+struct Divisor<uint64_t> : public DivisorMR<uint64_t> {
 	Divisor() noexcept = default;
 	explicit Divisor(uint64_t n) noexcept { this->_init(n); }
 	Divisor& operator=(uint64_t n) noexcept {
@@ -304,6 +353,10 @@ struct Divisor<uint64_t> : public DivisorGM<uint64_t> {
 		return *this;
 	}
 };
+
+#ifdef CHD_PACK_SIZE
+#pragma pack()
+#endif
 
 template <typename Word>
 static inline Word operator/(Word m, const Divisor<Word>& d) noexcept {

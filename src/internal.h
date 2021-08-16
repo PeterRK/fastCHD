@@ -22,7 +22,7 @@
 
 #include <cstring>
 #include <functional>
-#include <type_traits>
+//#define CHD_PACK_SIZE 4
 #include <chd.h>
 
 #define FORCE_INLINE inline __attribute__((always_inline))
