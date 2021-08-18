@@ -87,7 +87,7 @@ static int BenchFetch() {
 	std::vector<uint64_t> results(n);
 
 	for (unsigned i = 0; i < n; i++) {
-		workers.emplace_back([&dict, loop, batch](uint64_t* res){
+		workers.emplace_back([&dict](uint64_t* res){
 			std::vector<uint64_t> key_vec(batch);
 			auto out = std::make_unique<uint8_t[]>(EmbeddingGenerator::VALUE_SIZE*batch);
 

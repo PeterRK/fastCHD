@@ -697,8 +697,8 @@ struct BasicInfo {
 
 std::unique_ptr<uint8_t[]> CreateIndexView(const BasicInfo& info, uint32_t seed, const std::vector<IndexPiece>& pieces) {
 	Assert(!pieces.empty());
-	auto tmp = std::make_unique<uint8_t[]>(sizeof(PackView) + sizeof(SegmentView) * pieces.size());
-	auto index = (PackView*)tmp.get();
+	auto view = std::make_unique<uint8_t[]>(sizeof(PackView) + sizeof(SegmentView) * pieces.size());
+	auto index = (PackView*)view.get();
 	*index = PackView{};
 	index->key_len = info.key_len;
 	index->val_len = info.val_len;
@@ -715,7 +715,7 @@ std::unique_ptr<uint8_t[]> CreateIndexView(const BasicInfo& info, uint32_t seed,
 		index->segments[i].offset = off;
 		off += pieces[i].size;
 	}
-	return std::move(tmp);
+	return view;
 }
 
 static BuildStatus BuildAndDump(const DataReaders& in, IDataWriter& out, const BasicInfo& info, Retry retry,

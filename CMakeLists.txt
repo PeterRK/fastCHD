@@ -26,6 +26,7 @@ set(CMAKE_EXE_LINKER_FLAGS -Wl,--rpath=.)
 
 option(MODERN_CPU_ONLY "build for modern CPU only" ON)
 
+set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG -Wall")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-unroll-loops -fno-stack-protector")
 if (CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
 	if (MODERN_CPU_ONLY)
@@ -43,7 +44,6 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --param large-unit-insns=30000")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --param inline-unit-growth=100")
 endif()
-
 
 include_directories(${CMAKE_SOURCE_DIR}/include)
 

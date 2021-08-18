@@ -62,7 +62,7 @@ void GenCode(unsigned depth) {
     }
     std::cout << "\n\tint cur = " << (depth-1) << ";"
               << "\n\tauto forward = [&cur]() { if (++cur == " << depth << ") cur = 0; };"
-              << "\n\tauto sft = [&cur](int step)->int { return CountDown(cur,step," << depth << "); };";
+              << "\n\tauto sft = [&cur](int step)->int { return Shift(cur,step," << depth << "-step); };";
     std::cout << "\n\n\tfor (size_t i = " << (depth-1) << "; i < n; i++) {\n"
               << "\t\tctx[cur].s1 = p1(i);\n";
     for (unsigned i = 2; i < depth; i++) {
@@ -87,10 +87,10 @@ void GenCode(unsigned depth) {
 
 #include <type_traits>
 
-static inline int CountDown(int v, int d, int r) {
-	int x = v + (r-d);
-	v -= d;
-	if (__builtin_expect(v < 0, 0)) {
+static inline int Shift(int v, int l, int r) {
+	int x = v + r;
+	v -= l;
+	if (v < 0) {
 		v = x;
 	}
 	return v;
@@ -119,7 +119,7 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3) {
 
 	int cur = 2;
 	auto forward = [&cur]() { if (++cur == 3) cur = 0; };
-	auto sft = [&cur](int step)->int { return CountDown(cur,step,3); };
+	auto sft = [&cur](int step)->int { return Shift(cur,step,3-step); };
 
 	for (size_t i = 2; i < n; i++) {
 		ctx[cur].s1 = p1(i);
@@ -165,7 +165,7 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4) {
 
 	int cur = 3;
 	auto forward = [&cur]() { if (++cur == 4) cur = 0; };
-	auto sft = [&cur](int step)->int { return CountDown(cur,step,4); };
+	auto sft = [&cur](int step)->int { return Shift(cur,step,4-step); };
 
 	for (size_t i = 3; i < n; i++) {
 		ctx[cur].s1 = p1(i);
@@ -224,7 +224,7 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const
 
 	int cur = 4;
 	auto forward = [&cur]() { if (++cur == 5) cur = 0; };
-	auto sft = [&cur](int step)->int { return CountDown(cur,step,5); };
+	auto sft = [&cur](int step)->int { return Shift(cur,step,5-step); };
 
 	for (size_t i = 4; i < n; i++) {
 		ctx[cur].s1 = p1(i);
@@ -298,7 +298,7 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const
 
 	int cur = 5;
 	auto forward = [&cur]() { if (++cur == 6) cur = 0; };
-	auto sft = [&cur](int step)->int { return CountDown(cur,step,6); };
+	auto sft = [&cur](int step)->int { return Shift(cur,step,6-step); };
 
 	for (size_t i = 5; i < n; i++) {
 		ctx[cur].s1 = p1(i);
@@ -389,7 +389,7 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const
 
 	int cur = 6;
 	auto forward = [&cur]() { if (++cur == 7) cur = 0; };
-	auto sft = [&cur](int step)->int { return CountDown(cur,step,7); };
+	auto sft = [&cur](int step)->int { return Shift(cur,step,7-step); };
 
 	for (size_t i = 6; i < n; i++) {
 		ctx[cur].s1 = p1(i);
@@ -499,7 +499,7 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const
 
 	int cur = 7;
 	auto forward = [&cur]() { if (++cur == 8) cur = 0; };
-	auto sft = [&cur](int step)->int { return CountDown(cur,step,8); };
+	auto sft = [&cur](int step)->int { return Shift(cur,step,8-step); };
 
 	for (size_t i = 7; i < n; i++) {
 		ctx[cur].s1 = p1(i);
@@ -630,7 +630,7 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const
 
 	int cur = 8;
 	auto forward = [&cur]() { if (++cur == 9) cur = 0; };
-	auto sft = [&cur](int step)->int { return CountDown(cur,step,9); };
+	auto sft = [&cur](int step)->int { return Shift(cur,step,9-step); };
 
 	for (size_t i = 8; i < n; i++) {
 		ctx[cur].s1 = p1(i);
@@ -784,7 +784,7 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const
 
 	int cur = 9;
 	auto forward = [&cur]() { if (++cur == 10) cur = 0; };
-	auto sft = [&cur](int step)->int { return CountDown(cur,step,10); };
+	auto sft = [&cur](int step)->int { return Shift(cur,step,10-step); };
 
 	for (size_t i = 9; i < n; i++) {
 		ctx[cur].s1 = p1(i);
@@ -963,7 +963,7 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const
 
 	int cur = 10;
 	auto forward = [&cur]() { if (++cur == 11) cur = 0; };
-	auto sft = [&cur](int step)->int { return CountDown(cur,step,11); };
+	auto sft = [&cur](int step)->int { return Shift(cur,step,11-step); };
 
 	for (size_t i = 10; i < n; i++) {
 		ctx[cur].s1 = p1(i);
@@ -1169,7 +1169,7 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const
 
 	int cur = 11;
 	auto forward = [&cur]() { if (++cur == 12) cur = 0; };
-	auto sft = [&cur](int step)->int { return CountDown(cur,step,12); };
+	auto sft = [&cur](int step)->int { return Shift(cur,step,12-step); };
 
 	for (size_t i = 11; i < n; i++) {
 		ctx[cur].s1 = p1(i);
@@ -1404,7 +1404,7 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const
 
 	int cur = 12;
 	auto forward = [&cur]() { if (++cur == 13) cur = 0; };
-	auto sft = [&cur](int step)->int { return CountDown(cur,step,13); };
+	auto sft = [&cur](int step)->int { return Shift(cur,step,13-step); };
 
 	for (size_t i = 12; i < n; i++) {
 		ctx[cur].s1 = p1(i);
@@ -1670,7 +1670,7 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const
 
 	int cur = 13;
 	auto forward = [&cur]() { if (++cur == 14) cur = 0; };
-	auto sft = [&cur](int step)->int { return CountDown(cur,step,14); };
+	auto sft = [&cur](int step)->int { return Shift(cur,step,14-step); };
 
 	for (size_t i = 13; i < n; i++) {
 		ctx[cur].s1 = p1(i);
@@ -1969,7 +1969,7 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const
 
 	int cur = 14;
 	auto forward = [&cur]() { if (++cur == 15) cur = 0; };
-	auto sft = [&cur](int step)->int { return CountDown(cur,step,15); };
+	auto sft = [&cur](int step)->int { return Shift(cur,step,15-step); };
 
 	for (size_t i = 14; i < n; i++) {
 		ctx[cur].s1 = p1(i);

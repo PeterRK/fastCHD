@@ -51,9 +51,18 @@ union V128X {
 		uint32_t h32;
 	} u;
 };
+union V96X {
+	V96 v;
+	struct {
+		uint64_t l64;
+		uint32_t h32;
+	} u;
+};
 
 static FORCE_INLINE bool operator==(const V96& a, const V96& b) {
-	return *(const uint64_t*)a.u == *(const uint64_t*)b.u && a.u[2] == b.u[2];
+	V96X ax{.v = a};
+	V96X bx{.v = b};
+	return ax.u.l64 == bx.u.l64 && ax.u.h32 == bx.u.h32;
 }
 
 extern V128 HashTo128(const uint8_t* msg, uint8_t len, uint64_t seed);

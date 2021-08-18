@@ -91,7 +91,7 @@ std::unique_ptr<uint8_t[]> CreatePackView(const uint8_t* addr, size_t size) {
 	}
 	index->space_end = addr + size;
 
-	return std::move(view);
+	return view;
 }
 
 PerfectHashtable::PerfectHashtable(const std::string& path, LoadPolicy load_policy) {
