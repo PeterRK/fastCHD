@@ -55,9 +55,11 @@ extern BuildStatus BuildIndex(const DataReaders& in, IDataWriter& out, Retry ret
 //dynamic length key is not useful, just pad or use checksum instead
 extern BuildStatus BuildSet(const DataReaders& in, IDataWriter& out, Retry retry=DEFAULT_RETRY);
 
+//key & value should have fixed length
 //inline large value may consume a lot of memory
 extern BuildStatus BuildDict(const DataReaders& in, IDataWriter& out, Retry retry=DEFAULT_RETRY);
 
+//key should have fixed length
 extern BuildStatus BuildDictWithVariedValue(const DataReaders& in, IDataWriter& out, Retry retry=DEFAULT_RETRY);
 
 extern bool g_trace_build_time;
@@ -85,6 +87,7 @@ public:
 	size_t locate(const uint8_t* key, uint8_t key_len) const noexcept;
 
 	//KEY_SET, KV_INLINE or KV_SEPARATED
+	//key is found when output slice is valid
 	Slice search(const uint8_t* key) const noexcept;
 
 	//KEY_SET or KV_INLINE

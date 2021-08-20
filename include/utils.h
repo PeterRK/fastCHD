@@ -115,6 +115,7 @@ private:
 struct Slice {
 	const uint8_t* ptr = nullptr;
 	size_t len = 0;
+	bool valid() const noexcept { return ptr != nullptr; }
 };
 
 struct Record {
