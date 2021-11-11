@@ -854,25 +854,6 @@ static BuildStatus FillInlineKeyValue(const PackView& index, const DataReaders& 
 	return BUILD_STATUS_OK;
 }
 
-static bool DetectKeyValueLen(IDataReader& reader, uint8_t* key_len, uint16_t* val_len) {
-	if (key_len == nullptr) {
-		return false;
-	}
-	auto rec = reader.read(val_len == nullptr);
-	if (rec.key.ptr == nullptr || rec.key.len == 0 || rec.key.len > MAX_KEY_LEN) {
-		return false;
-	}
-	*key_len =  rec.key.len;
-	if (val_len != nullptr) {
-		if (rec.val.ptr == nullptr || rec.val.len == 0 || rec.val.len > MAX_INLINE_VALUE_LEN) {
-			return false;
-		}
-		*val_len = rec.val.len;
-	}
-	reader.reset();
-	return true;
-}
-
 static unsigned VarIntSize(size_t n) {
 	unsigned cnt = 1;
 	while ((n & ~0x7fULL) != 0) {
@@ -970,9 +951,31 @@ BuildStatus BuildIndex(const DataReaders& in, IDataWriter& out, Retry retry) {
 	return BuildAndDump(in, out, {Type::INDEX_ONLY, 0, 0}, retry, nullptr);
 }
 
+static bool DetectKeyValueLen(const DataReaders& in, uint8_t& key_len, uint16_t* val_len) {
+	for (auto& reader : in) {
+		if (reader->total() == 0) {
+			continue;
+		}
+		auto rec = reader->read(val_len == nullptr);
+		if (rec.key.ptr == nullptr || rec.key.len == 0 || rec.key.len > MAX_KEY_LEN) {
+			return false;
+		}
+		key_len =  rec.key.len;
+		if (val_len != nullptr) {
+			if (rec.val.ptr == nullptr || rec.val.len == 0 || rec.val.len > MAX_INLINE_VALUE_LEN) {
+				return false;
+			}
+			*val_len = rec.val.len;
+		}
+		reader->reset();
+		return true;
+	}
+	return false;
+}
+
 BuildStatus BuildSet(const DataReaders& in, IDataWriter& out, Retry retry) {
 	uint8_t key_len;
-	if (in.empty() || !(DetectKeyValueLen(*in.front(), &key_len, nullptr))) {
+	if (!DetectKeyValueLen(in, key_len, nullptr)) {
 		return BUILD_STATUS_BAD_INPUT;
 	}
 	return BuildAndDump(in, out, {Type::KEY_SET, key_len, 0}, retry,
@@ -984,7 +987,7 @@ BuildStatus BuildSet(const DataReaders& in, IDataWriter& out, Retry retry) {
 BuildStatus BuildDict(const DataReaders& in, IDataWriter& out, Retry retry) {
 	uint8_t key_len;
 	uint16_t val_len;
-	if (in.empty() || !(DetectKeyValueLen(*in.front(), &key_len, &val_len))) {
+	if (!DetectKeyValueLen(in, key_len, &val_len)) {
 		return BUILD_STATUS_BAD_INPUT;
 	}
 	return BuildAndDump(in, out, {Type::KV_INLINE, key_len, val_len}, retry,
@@ -995,7 +998,7 @@ BuildStatus BuildDict(const DataReaders& in, IDataWriter& out, Retry retry) {
 
 BuildStatus BuildDictWithVariedValue(const DataReaders& in, IDataWriter& out, Retry retry) {
 	uint8_t key_len;
-	if (in.empty() || !(DetectKeyValueLen(*in.front(), &key_len, nullptr))) {
+	if (!DetectKeyValueLen(in, key_len, nullptr)) {
 		return BUILD_STATUS_BAD_INPUT;
 	}
 	return BuildAndDump(in, out, {Type::KV_SEPARATED, key_len, OFFSET_FIELD_SIZE}, retry,
