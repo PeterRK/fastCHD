@@ -25,6 +25,7 @@
 #include <atomic>
 #include <thread>
 #include <memory>
+#include <random>
 #include <exception>
 #include <algorithm>
 #include <functional>
@@ -148,9 +149,8 @@ struct IndexPiece {
 };
 
 static uint64_t GetSeed() {
-	//return 1596176575357415943ULL;
-	return std::chrono::duration_cast<std::chrono::nanoseconds>(
-			std::chrono::system_clock::now().time_since_epoch()).count();
+	std::random_device rd;
+	return (static_cast<uint64_t>(rd()) << 32U) | static_cast<uint64_t>(rd());
 }
 
 static size_t SumInputSize(const DataReaders& in) {
