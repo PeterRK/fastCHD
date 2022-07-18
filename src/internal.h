@@ -153,11 +153,10 @@ static FORCE_INLINE void ClearBit(uint8_t bitmap[], size_t pos) {
 }
 
 static FORCE_INLINE constexpr uint32_t L1Size(uint32_t item) {
-	auto sz = (item+3U)/4U;
-	return (sz&(~1U)) + 1U;	//up to odd
+	return (item+3U)/4U | 1U;	//up to odd
 }
 static FORCE_INLINE constexpr uint64_t L2Size(uint32_t item) {
-	return ((uint64_t)item)*2U + 1U;
+	return ((uint64_t)item)*2U | 1U;	//up to odd
 }
 
 struct BitmapSection {
