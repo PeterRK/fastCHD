@@ -123,7 +123,7 @@ static FORCE_INLINE Step3 Process3(const PackView& pack, const Step2& in, bool f
 
 #define BUBBLE(type) [](const type& in, size_t) -> type { return in; }
 
-size_t BatchSearch(const PackView& pack, size_t batch, const uint8_t* const keys[], const uint8_t* out[]) {
+unsigned BatchSearch(const PackView& pack, unsigned batch, const uint8_t* const keys[], const uint8_t* out[]) {
 	if (pack.type != Type::KV_INLINE && pack.type != Type::KEY_SET) {
 		return 0;
 	}
@@ -138,21 +138,21 @@ size_t BatchSearch(const PackView& pack, size_t batch, const uint8_t* const keys
 #define BUBBLE_GROUP(type)
 #endif
 
-	size_t hit = 0;
+	unsigned hit = 0;
 	Pipeline(batch,
-			[&pack, keys](size_t i) -> Step1 {
+			[&pack, keys](unsigned i) -> Step1 {
 				return Process1(pack, keys[i]);
 			},
 			BUBBLE_GROUP(Step1)
-			[](const Step1& in, size_t) -> Step2 {
+			[](const Step1& in, unsigned) -> Step2 {
 				return Process2(in);
 			},
 			BUBBLE_GROUP(Step2)
-			[&pack](const Step2& in, size_t) -> Step3 {
+			[&pack](const Step2& in, unsigned) -> Step3 {
 				return Process3(pack, in);
 			},
 			BUBBLE_GROUP(Step3)
-			[&pack, &hit, keys, out](const Step3& in, size_t i) {
+			[&pack, &hit, keys, out](const Step3& in, unsigned i) {
 				if (LIKELY(in.line != nullptr) && Equal(keys[i], in.line, pack.key_len)) {
 					hit++;
 					out[i] = in.line + pack.key_len;
@@ -165,8 +165,8 @@ size_t BatchSearch(const PackView& pack, size_t batch, const uint8_t* const keys
 #undef BUBBLE_GROUP
 }
 
-size_t BatchFetch(const PackView& pack, const uint8_t* __restrict__ dft_val,
-					size_t batch, const uint8_t* __restrict__ keys, uint8_t* __restrict__ data) {
+unsigned BatchFetch(const PackView& pack, const uint8_t* __restrict__ dft_val, unsigned batch,
+				  const uint8_t* __restrict__ keys, uint8_t* __restrict__ data, unsigned* __restrict__ miss) {
 	if (pack.type != Type::KV_INLINE) {
 		return 0;
 	}
@@ -181,22 +181,22 @@ size_t BatchFetch(const PackView& pack, const uint8_t* __restrict__ dft_val,
 #define BUBBLE_GROUP(type)
 #endif
 
-	size_t hit = 0;
+	unsigned hit = 0;
 	Pipeline(batch,
-			[&pack, keys](size_t i) -> Step1 {
+			[&pack, keys](unsigned i) -> Step1 {
 				auto key = keys+i*pack.key_len;
 				return Process1(pack, key);
 			},
 			BUBBLE_GROUP(Step1)
-			[](const Step1& in, size_t) -> Step2 {
+			[](const Step1& in, unsigned) -> Step2 {
 				return Process2(in);
 			},
 			BUBBLE_GROUP(Step2)
-			[&pack](const Step2& in, size_t) -> Step3 {
+			[&pack](const Step2& in, unsigned) -> Step3 {
 				return Process3(pack, in, true);
 			},
 			BUBBLE_GROUP(Step3)
-			[&pack, &hit, keys, data, dft_val](const Step3& in, size_t i) {
+			[&pack, &hit, keys, data, dft_val, &miss](const Step3& in, unsigned i) {
 				auto key = keys + i*pack.key_len;
 				auto out = data + i*pack.val_len;
 				auto src = in.line + pack.key_len;
@@ -204,6 +204,8 @@ size_t BatchFetch(const PackView& pack, const uint8_t* __restrict__ dft_val,
 					hit++;
 				} else if (dft_val != nullptr) {
 					src = dft_val;
+				} else if (miss != nullptr) {
+					*miss++ = i;
 				} else {
 					return;
 				}
@@ -224,8 +226,8 @@ using Step4 = Relay<Step1>;
 using Step5 = Relay<Step2>;
 using Step6 = Relay<Step3>;
 
-size_t BatchSearch(const PackView& base, const PackView& patch,
-					size_t batch, const uint8_t* const keys[], const uint8_t* out[]) {
+unsigned BatchSearch(const PackView& base, const PackView& patch,
+					 unsigned batch, const uint8_t* const keys[], const uint8_t* out[]) {
 	if ((base.type != Type::KV_INLINE && base.type != Type::KEY_SET)
 		|| base.type != patch.type || base.key_len != patch.key_len) {
 		return 0;
@@ -237,21 +239,21 @@ size_t BatchSearch(const PackView& base, const PackView& patch,
 #define BUBBLE_GROUP(type)
 #endif
 
-	size_t hit = 0;
+	unsigned hit = 0;
 	Pipeline(batch,
-			[&patch, keys](size_t i) -> Step1 {
+			[&patch, keys](unsigned i) -> Step1 {
 				return Process1(patch, keys[i]);
 			},
 			BUBBLE_GROUP(Step1)
-			[](const Step1& in, size_t) -> Step2 {
+			[](const Step1& in, unsigned) -> Step2 {
 				return Process2(in);
 			},
 			BUBBLE_GROUP(Step2)
-			[&patch](const Step2& in, size_t) -> Step3 {
+			[&patch](const Step2& in, unsigned) -> Step3 {
 				return Process3(patch, in);
 			},
 			BUBBLE_GROUP(Step3)
-			[&base, &patch, keys](const Step3& in, size_t i) -> Step4 {
+			[&base, &patch, keys](const Step3& in, unsigned i) -> Step4 {
 				if (LIKELY(in.line != nullptr) && Equal(keys[i], in.line, patch.key_len)) {
 					return {in.line + patch.key_len, Step1{}};
 				} else {
@@ -259,7 +261,7 @@ size_t BatchSearch(const PackView& base, const PackView& patch,
 				}
 			},
 			BUBBLE_GROUP(Step4)
-			[](const Step4& in, size_t) -> Step5 {
+			[](const Step4& in, unsigned) -> Step5 {
 				if (in.v != nullptr) {
 					return {in.v, Step2{}};
 				} else {
@@ -267,7 +269,7 @@ size_t BatchSearch(const PackView& base, const PackView& patch,
 				}
 			},
 			BUBBLE_GROUP(Step5)
-			[&base](const Step5& in, size_t) -> Step6 {
+			[&base](const Step5& in, unsigned) -> Step6 {
 				if (in.v != nullptr) {
 					return {in.v, Step3{}};
 				} else {
@@ -275,7 +277,7 @@ size_t BatchSearch(const PackView& base, const PackView& patch,
 				}
 			},
 			BUBBLE_GROUP(Step6)
-			[&base, &hit, keys, out](const Step6& in, size_t i) {
+			[&base, &hit, keys, out](const Step6& in, unsigned i) {
 				if (in.v != nullptr) {
 					hit++;
 					out[i] = in.v;
@@ -291,8 +293,8 @@ size_t BatchSearch(const PackView& base, const PackView& patch,
 #undef BUBBLE_GROUP
 }
 
-size_t BatchFetch(const PackView& base, const PackView& patch, const uint8_t* __restrict__ dft_val,
-					size_t batch, const uint8_t* __restrict__ keys, uint8_t* __restrict__ data) {
+unsigned BatchFetch(const PackView& base, const PackView& patch, const uint8_t* __restrict__ dft_val, unsigned batch,
+				  const uint8_t* __restrict__ keys, uint8_t* __restrict__ data, unsigned* __restrict__ miss) {
 	if (base.type != Type::KV_INLINE || base.type != patch.type
 		|| base.key_len != patch.key_len || base.val_len != patch.val_len) {
 		return 0;
@@ -304,22 +306,22 @@ size_t BatchFetch(const PackView& base, const PackView& patch, const uint8_t* __
 #define BUBBLE_GROUP(type)
 #endif
 
-	size_t hit = 0;
+	unsigned hit = 0;
 	Pipeline(batch,
-			[&patch, keys](size_t i) -> Step1 {
+			[&patch, keys](unsigned i) -> Step1 {
 				auto key = keys+i*patch.key_len;
 				return Process1(patch, key);
 			},
 			BUBBLE_GROUP(Step1)
-			[](const Step1& in, size_t) -> Step2 {
+			[](const Step1& in, unsigned) -> Step2 {
 				return Process2(in);
 			},
 			BUBBLE_GROUP(Step2)
-			[&patch](const Step2& in, size_t) -> Step3 {
+			[&patch](const Step2& in, unsigned) -> Step3 {
 				return Process3(patch, in, true);
 			},
 			BUBBLE_GROUP(Step3)
-			[&base, &patch, keys](const Step3& in, size_t i) -> Step4 {
+			[&base, &patch, keys](const Step3& in, unsigned i) -> Step4 {
 				auto key = keys + i*base.key_len;
 				if (LIKELY(in.line != nullptr) && Equal(key, in.line, patch.key_len)) {
 					return {in.line + patch.key_len, Step1{}};
@@ -328,7 +330,7 @@ size_t BatchFetch(const PackView& base, const PackView& patch, const uint8_t* __
 				}
 			},
 			BUBBLE_GROUP(Step4)
-			[](const Step4& in, size_t) -> Step5 {
+			[](const Step4& in, unsigned) -> Step5 {
 				if (in.v != nullptr) {
 					return {in.v, Step2{}};
 				} else {
@@ -336,7 +338,7 @@ size_t BatchFetch(const PackView& base, const PackView& patch, const uint8_t* __
 				}
 			},
 			BUBBLE_GROUP(Step5)
-			[&base](const Step5& in, size_t) -> Step6 {
+			[&base](const Step5& in, unsigned) -> Step6 {
 				if (in.v != nullptr) {
 					return {in.v, Step3{}};
 				} else {
@@ -344,7 +346,7 @@ size_t BatchFetch(const PackView& base, const PackView& patch, const uint8_t* __
 				}
 			},
 			BUBBLE_GROUP(Step6)
-			[&base, &hit, keys, data, dft_val](const Step6& in, size_t i) {
+			[&base, &hit, keys, data, dft_val, &miss](const Step6& in, unsigned i) {
 				auto key = keys + i*base.key_len;
 				auto out = data + i*base.val_len;
 				auto src = in.v;
@@ -355,6 +357,8 @@ size_t BatchFetch(const PackView& base, const PackView& patch, const uint8_t* __
 					src = in.s.line + base.key_len;
 				} else if (dft_val != nullptr) {
 					src = dft_val;
+				} else if (miss != nullptr) {
+					*miss++ = i;
 				} else {
 					return;
 				}

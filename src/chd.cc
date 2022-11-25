@@ -207,13 +207,13 @@ unsigned PerfectHashtable::batch_search(unsigned batch, const uint8_t* const key
 		return 0;
 	}
 	if (patch == nullptr) {
-		return BatchSearch(*base,batch,keys,out);
+		return BatchSearch(*base, batch, keys, out);
 	} else {
 		auto delta = (const PackView*)patch->m_view.get();
 		if (delta == nullptr) {
 			return 0;
 		}
-		return BatchSearch(*base,*delta,batch,keys,out);
+		return BatchSearch(*base, *delta, batch, keys, out);
 	}
 }
 
@@ -224,13 +224,30 @@ unsigned PerfectHashtable::batch_fetch(unsigned batch, const uint8_t* __restrict
 		return 0;
 	}
 	if (patch == nullptr) {
-		return BatchFetch(*base,dft_val,batch,keys,data);
+		return BatchFetch(*base, dft_val, batch, keys, data, nullptr);
 	} else {
 		auto delta = (const PackView*)patch->m_view.get();
 		if (delta == nullptr) {
 			return 0;
 		}
-		return BatchFetch(*base,*delta,dft_val,batch,keys,data);
+		return BatchFetch(*base, *delta, dft_val, batch, keys, data, nullptr);
+	}
+}
+
+unsigned PerfectHashtable::batch_try_fetch(unsigned batch, const uint8_t* __restrict__ keys, uint8_t* __restrict__ data,
+									   unsigned* __restrict__ miss, const PerfectHashtable* patch) const noexcept {
+	auto base = (const PackView*)m_view.get();
+	if (base == nullptr || keys == nullptr || data == nullptr) {
+		return 0;
+	}
+	if (patch == nullptr) {
+		return BatchFetch(*base, nullptr, batch, keys, data, miss);
+	} else {
+		auto delta = (const PackView*)patch->m_view.get();
+		if (delta == nullptr) {
+			return 0;
+		}
+		return BatchFetch(*base, *delta, nullptr, batch, keys, data, miss);
 	}
 }
 

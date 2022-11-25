@@ -215,7 +215,7 @@ protected:
 		}
 		m_sft = BITWIDTH - 1;
 		constexpr Word one = 1;
-		auto m  = one << m_sft;
+		auto m = one << m_sft;
 		for (; m > n; m >>= 1U) {
 			m_sft--;
 		}

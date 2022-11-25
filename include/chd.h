@@ -100,6 +100,9 @@ public:
 						 const uint8_t* __restrict__ dft_val=nullptr,
 						 const PerfectHashtable* patch=nullptr) const noexcept;
 
+	unsigned batch_try_fetch(unsigned batch, const uint8_t* __restrict__ keys, uint8_t* __restrict__ data,
+							 unsigned* __restrict__ miss, const PerfectHashtable* patch=nullptr) const noexcept;
+
 	BuildStatus derive(const DataReaders& in, IDataWriter& out, Retry retry=DEFAULT_RETRY) const;
 
 private:

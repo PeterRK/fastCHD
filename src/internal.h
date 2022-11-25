@@ -263,13 +263,14 @@ void BatchDataMapping(const PackView& index, uint8_t* space, size_t batch,
 					  const std::function<const uint8_t*(uint8_t*)>& reader);
 
 
-extern size_t BatchSearch(const PackView& pack, size_t batch, const uint8_t* const keys[], const uint8_t* out[]);
-extern size_t BatchFetch(const PackView& pack, const uint8_t* __restrict__ dft_val,
-						   size_t batch, const uint8_t* __restrict__ keys, uint8_t* __restrict__ data);
-extern size_t BatchSearch(const PackView& base, const PackView& patch,
-							  size_t batch, const uint8_t* const keys[], const uint8_t* out[]);
-extern size_t BatchFetch(const PackView& base, const PackView& patch, const uint8_t* __restrict__ dft_val,
-						   size_t batch, const uint8_t* __restrict__ keys, uint8_t* __restrict__ data);
+extern unsigned BatchSearch(const PackView& pack, unsigned batch, const uint8_t* const keys[], const uint8_t* out[]);
+extern unsigned BatchFetch(const PackView& pack, const uint8_t* __restrict__ dft_val, unsigned batch,
+						   const uint8_t* __restrict__ keys, uint8_t* __restrict__ data, unsigned* __restrict__ miss);
+extern unsigned BatchSearch(const PackView& base, const PackView& patch, unsigned batch,
+							const uint8_t* const keys[], const uint8_t* out[]);
+extern unsigned BatchFetch(const PackView& base, const PackView& patch, const uint8_t* __restrict__ dft_val,
+						   unsigned batch, const uint8_t* __restrict__ keys, uint8_t* __restrict__ data,
+						   unsigned* __restrict__ miss);
 
 extern BuildStatus Rebuild(const PackView& base, const DataReaders& in, IDataWriter& out, Retry retry);
 
