@@ -17,7 +17,6 @@
 //==============================================================================
 
 #include <cassert>
-#include <cstdlib>
 #include <cstring>
 #include <tuple>
 #include <vector>
@@ -66,16 +65,17 @@ static FORCE_INLINE void Assert(bool condition) {
 	}
 
 static bool HasConflict(V96 ids[], uint32_t cnt) {
-	qsort(ids, cnt, sizeof(V96), [](const void* a, const void* b)->int {
-		const uint64_t c = *(const uint64_t*)a;
-		const uint64_t d = *(const uint64_t*)b;
-		if (c > d) return 1;
-		if (c < d) return -1;
-		const auto x = (const uint32_t*)a;
-		const auto y = (const uint32_t*)b;
-		if (x[2] > y[2]) return 1;
-		if (x[2] < y[2]) return -1;
-		return 0;
+	std::sort(ids, ids+cnt, [](const V96& a, const V96& b)->bool{
+		V96X ax, bx;
+		ax.v = a;
+		bx.v = b;
+		if (ax.u.l64 < bx.u.l64) {
+			return true;
+		} else if (ax.u.l64 > bx.u.l64) {
+			return false;
+		} else {
+			return ax.u.h32 < bx.u.h32;
+		}
 	});
 	for (uint32_t i = 1; i < cnt; i++) {
 		if (ids[i] == ids[i-1]) {
