@@ -111,9 +111,6 @@ Mapping(V96 ids[], uint32_t cnt, uint8_t sd8, uint8_t bitmap[], const Divisor<ui
 			auto remain = cnt;
 			while (remain > MINI_BATCH) {
 				if (!mini_batch_mapping(sd8, tail, MINI_BATCH)) {
-					for (auto p = ids; p < tail; p++) {
-						ClearBit(bitmap, L2Hash(*p, sd8) % range);
-					}
 					goto retry;
 				}
 				tail += MINI_BATCH;
@@ -123,6 +120,9 @@ Mapping(V96 ids[], uint32_t cnt, uint8_t sd8, uint8_t bitmap[], const Divisor<ui
 				return true;
 			}
 		retry:
+			for (auto p = ids; p < tail; p++) {
+				ClearBit(bitmap, L2Hash(*p, sd8) % range);
+			}
 			sd8++;
 		}
 		return false;
@@ -960,7 +960,7 @@ static bool DetectKeyValueLen(const DataReaders& in, uint8_t& key_len, uint16_t*
 		if (rec.key.ptr == nullptr || rec.key.len == 0 || rec.key.len > MAX_KEY_LEN) {
 			return false;
 		}
-		key_len =  rec.key.len;
+		key_len = rec.key.len;
 		if (val_len != nullptr) {
 			if (rec.val.ptr == nullptr || rec.val.len == 0 || rec.val.len > MAX_INLINE_VALUE_LEN) {
 				return false;
@@ -1018,7 +1018,7 @@ class RebuildReader : public IDataReader {
 public:
 	explicit RebuildReader(const std::shared_ptr<MemBlock>& dirty,
 						const Shard& shard, const PackView& base, IDataReader& patch)
-		: m_dirty(dirty), m_shard(shard),m_base(base), m_patch(patch),  m_pos(shard.begin) {
+		: m_dirty(dirty), m_shard(shard),m_base(base), m_patch(patch), m_pos(shard.begin) {
 		assert(base.type != Type::INDEX_ONLY && dirty != nullptr);
 		m_patch.reset();
 	}
