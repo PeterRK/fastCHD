@@ -1,5 +1,5 @@
 //==============================================================================
-// A modern implement of CHD algorithm.
+// Skew Hash and Displace Algorithm.
 // Copyright (C) 2020  Ruan Kunliang
 //
 // This library is free software; you can redistribute it and/or modify it under
@@ -17,13 +17,13 @@
 //==============================================================================
 
 #pragma once
-#ifndef CHD_INTERNAL_H_
-#define CHD_INTERNAL_H_
+#ifndef SHD_INTERNAL_H_
+#define SHD_INTERNAL_H_
 
 #include <cstring>
 #include <functional>
-//#define CHD_PACK_SIZE 4
-#include <chd.h>
+//#define SHD_PACK_SIZE 4
+#include <shd.h>
 
 #define FORCE_INLINE inline __attribute__((always_inline))
 #define NOINLINE __attribute__((noinline))
@@ -35,7 +35,7 @@
 #error "little endian only"
 #endif
 
-namespace chd {
+namespace shd {
 
 struct V128 {
 	uint64_t l;
@@ -152,9 +152,24 @@ static FORCE_INLINE void ClearBit(uint8_t bitmap[], size_t pos) {
 	bitmap[pos>>3U] &= ~(1U<<(pos&7U));
 }
 
+static constexpr uint64_t L1H_MAX = 0x7fffffff;
+static constexpr uint32_t L1CELL = 5;
+static constexpr uint64_t L1TIP = L1H_MAX / L1CELL;
+
 static FORCE_INLINE constexpr uint32_t L1Size(uint32_t item) {
-	return ((uint64_t)item+3U)/4U | 1U;	//up to odd
+	return ((uint64_t)item+(L1CELL-1))/L1CELL;
 }
+
+static FORCE_INLINE constexpr uint64_t L1Band(uint32_t item) {
+	auto l1sz = L1Size(item);
+	return (L1H_MAX*(L1H_MAX+L1TIP) + (l1sz-1)) / l1sz;
+}
+
+static FORCE_INLINE uint32_t SkewMap(uint32_t code, const Divisor<uint64_t>& band) {
+	uint64_t x = code & L1H_MAX;
+	return x*(x+L1TIP) / band;
+}
+
 static FORCE_INLINE constexpr uint64_t L2Size(uint32_t item) {
 	return ((uint64_t)item)*2U | 1U;	//up to odd
 }
@@ -191,7 +206,7 @@ static FORCE_INLINE void Assign(uint8_t* dest, const uint8_t* src, uint8_t len) 
 	}
 }
 
-static constexpr uint32_t CHD_MAGIC = 0x4448437f;
+static constexpr uint32_t SHD_MAGIC = 0x4448537f;
 
 static constexpr uint32_t OFFSET_FIELD_SIZE = 6;
 static constexpr uint64_t MAX_OFFSET = (1ULL<<(OFFSET_FIELD_SIZE*8U))-1;
@@ -209,7 +224,7 @@ static FORCE_INLINE void WriteOffsetField(uint8_t* field, size_t offset) {
 using Type = PerfectHashtable::Type;
 
 struct Header {
-	uint32_t magic = CHD_MAGIC;
+	uint32_t magic = SHD_MAGIC;
 	uint8_t type = Type::INDEX_ONLY;
 	uint8_t key_len = 0;
 	uint16_t val_len = 0;
@@ -230,8 +245,8 @@ struct Header {
 struct SegmentView {
 	const uint8_t* cells = nullptr;
 	const BitmapSection* sections = nullptr;
+	Divisor<uint64_t> l1bd;
 	Divisor<uint64_t> l2sz;
-	Divisor<uint32_t> l1sz;
 	uint64_t offset = 0; //item offset
 };
 
@@ -274,5 +289,5 @@ extern unsigned BatchFetch(const PackView& base, const PackView& patch, const ui
 
 extern BuildStatus Rebuild(const PackView& base, const DataReaders& in, IDataWriter& out, Retry retry);
 
-} //chd
-#endif //CHD_INTERNAL_H_
+} //shd
+#endif //SHD_INTERNAL_H_

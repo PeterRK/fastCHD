@@ -1,5 +1,5 @@
 #===============================================================================
-# A modern implement of CHD algorithm.
+# Skew Hash and Displace Algorithm.
 # Copyright (C) 2020  Ruan Kunliang
 # 
 # This library is free software; you can redistribute it and/or modify it under 
@@ -17,7 +17,7 @@
 #===============================================================================
 
 cmake_minimum_required(VERSION 3.10)
-project(fastCHD)
+project(fastSHD)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -51,15 +51,15 @@ file(GLOB source
     src/*.cc
 )
 
-add_library(chd SHARED ${source})
-target_link_libraries(chd pthread)
+add_library(shd SHARED ${source})
+target_link_libraries(shd pthread)
 
 file(GLOB test_src
     test/*.cc
 )
 
-add_executable(chd-test ${test_src})
-target_link_libraries(chd-test pthread gtest chd)
+add_executable(shd-test ${test_src})
+target_link_libraries(shd-test pthread gtest shd)
 
 add_executable(bench-billion benchmark/billion.cc)
-target_link_libraries(bench-billion pthread gflags chd)
+target_link_libraries(bench-billion pthread gflags shd)

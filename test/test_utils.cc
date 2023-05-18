@@ -1,5 +1,5 @@
 //==============================================================================
-// A modern implement of CHD algorithm.
+// Skew Hash and Displace Algorithm.
 // Copyright (C) 2020  Ruan Kunliang
 //
 // This library is free software; you can redistribute it and/or modify it under
@@ -25,7 +25,7 @@
 template<typename Word>
 void DoTestDivisor(Word n) {
 	ASSERT_NE(n, 0);
-	chd::Divisor<Word> d(n);
+	shd::Divisor<Word> d(n);
 	std::mt19937_64 rand;
 
 	auto test = [&d](Word m) {

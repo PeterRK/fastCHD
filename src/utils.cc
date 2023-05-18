@@ -1,5 +1,5 @@
 //==============================================================================
-// A modern implement of CHD algorithm.
+// Skew Hash and Displace Algorithm.
 // Copyright (C) 2020  Ruan Kunliang
 //
 // This library is free software; you can redistribute it and/or modify it under
@@ -26,7 +26,7 @@
 #include <sys/stat.h>
 #include <utils.h>
 
-namespace chd {
+namespace shd {
 
 struct DefaultLogger : public Logger {
 	void printf(const char* format, va_list args) override;
@@ -243,4 +243,4 @@ bool FileWriter::write(const void* data, size_t n) noexcept {
 	return true;
 }
 
-} //chd
+} //shd

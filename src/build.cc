@@ -1,5 +1,5 @@
 //==============================================================================
-// A modern implement of CHD algorithm.
+// Skew Hash and Displace Algorithm.
 // Copyright (C) 2020  Ruan Kunliang
 //
 // This library is free software; you can redistribute it and/or modify it under
@@ -30,7 +30,7 @@
 #include <functional>
 #include "internal.h"
 
-namespace chd {
+namespace shd {
 
 bool g_trace_build_time = false;
 static double DurationS(const std::chrono::steady_clock::time_point& start, const std::chrono::steady_clock::time_point& end) {
@@ -127,8 +127,9 @@ Mapping(V96 ids[], uint32_t cnt, uint8_t sd8, uint8_t bitmap[], const Divisor<ui
 		}
 		return false;
 	};
+
 	assert(cnt != 0);
-	constexpr unsigned FIRST_TRIES = 56;
+	constexpr unsigned FIRST_TRIES = 96;
 	constexpr unsigned SECOND_TRIES = 256 - FIRST_TRIES;
 	if (try_to_map(FIRST_TRIES)) {
 		return {sd8, BUILD_STATUS_OK};
@@ -284,13 +285,14 @@ struct L1Mark {
 	uint32_t idx;
 };
 
-static NOINLINE uint32_t L1SortMarking(V96 ids[], uint32_t total, const Divisor<uint32_t>& l1sz, L1Mark table[]) {
-	for (uint32_t i = 0; i < l1sz.value(); i++) {
+static NOINLINE uint32_t L1SortMarking(V96 ids[], uint32_t total, L1Mark table[], uint32_t tbsz,
+																			 const Divisor<uint64_t>& l1bd) {
+	for (uint32_t i = 0; i < tbsz; i++) {
 		table[i] = {0, i};
 	}
 	return Counting(ids, total,
-					[l1sz, table](const V96& id)->uint32_t& {
-						return table[L1Hash(id) % l1sz].val;
+					[l1bd, table](const V96& id)->uint32_t& {
+						return table[SkewMap(L1Hash(id), l1bd)].val;
 					});
 }
 
@@ -326,10 +328,10 @@ static NOINLINE L1Mark* L1SortReorder(uint32_t max, unsigned n, L1Mark table[], 
 	return temp;
 }
 
-static NOINLINE void L1SortShuffle(V96 ids[], const Divisor<uint32_t>& l1sz, L1Mark range[]) {
-	Shuffle(ids, l1sz.value(),
-			[l1sz](const V96& id)->uint32_t {
-				return L1Hash(id) % l1sz;
+static NOINLINE void L1SortShuffle(V96 ids[], uint32_t l1sz, const Divisor<uint64_t>& l1bd, L1Mark range[]) {
+	Shuffle(ids, l1sz,
+			[l1bd](const V96& id)->uint32_t {
+				return SkewMap(L1Hash(id), l1bd);
 			},
 			[range](uint32_t i)->uint32_t& {
 				return range[i].idx;
@@ -341,34 +343,38 @@ static NOINLINE void L1SortShuffle(V96 ids[], const Divisor<uint32_t>& l1sz, L1M
 }
 
 static NOINLINE void L1SortShuffle(V96 ids[], V96 shadow[], uint32_t total,
-								   const Divisor<uint32_t>& l1sz, L1Mark range[]) {
+																	 const Divisor<uint64_t>& l1bd, L1Mark range[]) {
 	Shuffle(ids, shadow, total,
-			[l1sz, range](const V96& id)->uint32_t& {
-				return range[L1Hash(id) % l1sz].idx;
+			[l1bd, range](const V96& id)->uint32_t& {
+				return range[SkewMap(L1Hash(id), l1bd)].idx;
 			});
 }
 
-static V96* L1Sort(V96 ids[], V96 shadow[], uint32_t total, const Divisor<uint32_t>& l1sz) {
-	ALLOC_MEM_BLOCK(mem, ((size_t)l1sz.value()) * sizeof(L1Mark) * 2)
-	auto max = L1SortMarking(ids, total, l1sz, (L1Mark*)mem.addr());
-	if (max > std::min(l1sz.value()+16U, (uint32_t)UINT16_MAX)) {
+static V96* L1Sort(V96 ids[], V96 shadow[], uint32_t total,
+									 uint32_t l1sz, const Divisor<uint64_t>& l1bd) {
+	ALLOC_MEM_BLOCK(mem, ((size_t)l1sz) * sizeof(L1Mark) * 2)
+	auto table = (L1Mark*)mem.addr();
+
+	auto max = L1SortMarking(ids, total, table, l1sz, l1bd);
+	if (max > std::min(l1sz+16U, (uint32_t)UINT16_MAX)) {
 		return nullptr;
 	}
-	auto range = L1SortReorder(max, l1sz.value(), (L1Mark*)mem.addr(), (L1Mark*)mem.addr()+l1sz.value());
+	auto range = L1SortReorder(max, l1sz, table, table+l1sz);
 	if (shadow == nullptr) {
-		L1SortShuffle(ids, l1sz, range);
+		L1SortShuffle(ids, l1sz, l1bd, range);
 		return ids;
 	} else {
-		L1SortShuffle(ids, shadow, total, l1sz, range);
+		L1SortShuffle(ids, shadow, total, l1bd, range);
 		return shadow;
 	}
 }
 
 static NOINLINE BuildStatus Build(V96 ids[], V96 shadow[], IndexPiece& out) {
-	const Divisor<uint32_t> l1sz(L1Size(out.size));
+	const uint32_t l1sz = L1Size(out.size);
+	const Divisor<uint64_t> l1bd(L1Band(out.size));
 	const Divisor<uint64_t> l2sz(L2Size(out.size));
 
-	ids = L1Sort(ids, shadow, out.size, l1sz);
+	ids = L1Sort(ids, shadow, out.size, l1sz, l1bd);
 	if (ids == nullptr) {
 		return BUILD_STATUS_CONFLICT;
 	};
@@ -376,14 +382,14 @@ static NOINLINE BuildStatus Build(V96 ids[], V96 shadow[], IndexPiece& out) {
 	const auto bitmap_size = BitmapSize(out.size);
 	auto bitmap = std::make_unique<uint8_t[]>(bitmap_size);
 	memset(bitmap.get(), 0, bitmap_size);
-	auto cells = std::make_unique<uint8_t[]>(l1sz.value());
+	auto cells = std::make_unique<uint8_t[]>(l1sz);
 
 	uint8_t magic = 0;
 
-	auto last = L1Hash(ids[0]) % l1sz;
+	auto last = SkewMap(L1Hash(ids[0]), l1bd);
 	uint32_t begin = 0;
 	for (uint32_t i = 1; i < out.size; i++) {
-		auto curr = L1Hash(ids[i]) % l1sz;
+		auto curr = SkewMap(L1Hash(ids[i]), l1bd);
 		if (curr != last) {
 			auto [sd8, status] = Mapping(ids+begin, i-begin, magic--, bitmap.get(), l2sz);
 			if (status != BUILD_STATUS_OK) {
@@ -708,7 +714,7 @@ std::unique_ptr<uint8_t[]> CreateIndexView(const BasicInfo& info, uint32_t seed,
 	uint64_t off = 0;
 	for (unsigned i = 0; i < pieces.size(); i++) {
 		index->segments[i] = SegmentView{};
-		index->segments[i].l1sz = L1Size(pieces[i].size);
+		index->segments[i].l1bd = L1Band(pieces[i].size);
 		index->segments[i].l2sz = L2Size(pieces[i].size);
 		index->segments[i].sections = pieces[i].sections.get();
 		index->segments[i].cells = pieces[i].cells.get();
@@ -1192,4 +1198,4 @@ BuildStatus Rebuild(const PackView& base, const DataReaders& in, IDataWriter& ou
 	}
 }
 
-} //chd
+} //shd

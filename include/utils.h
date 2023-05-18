@@ -1,5 +1,5 @@
 //==============================================================================
-// A modern implement of CHD algorithm.
+// Skew Hash and Displace Algorithm.
 // Copyright (C) 2020  Ruan Kunliang
 //
 // This library is free software; you can redistribute it and/or modify it under
@@ -17,8 +17,8 @@
 //==============================================================================
 
 #pragma once
-#ifndef CHD_UTILS_H_
-#define CHD_UTILS_H_
+#ifndef SHD_UTILS_H_
+#define SHD_UTILS_H_
 
 #include <cstdint>
 #include <cstdarg>
@@ -26,7 +26,7 @@
 #include <utility>
 #include <type_traits>
 
-namespace chd {
+namespace shd {
 
 class MemBlock final {
 public:
@@ -168,8 +168,8 @@ private:
 	bool _write(const void* data, size_t n) noexcept;
 };
 
-#ifdef CHD_PACK_SIZE
-#pragma pack(CHD_PACK_SIZE)
+#ifdef SHD_PACK_SIZE
+#pragma pack(SHD_PACK_SIZE)
 #endif
 
 //Modified Robison
@@ -181,7 +181,7 @@ private:
 	Word m_val = 0;
 #ifndef DISABLE_SOFT_DIVIDE
 	Word m_fac = 0;
-#ifdef CHD_PACK_SIZE
+#ifdef SHD_PACK_SIZE
 	Word m_tip = 0;
 	unsigned m_sft = 0;
 #else
@@ -205,7 +205,7 @@ protected:
 #ifndef DISABLE_SOFT_DIVIDE
 		m_fac = 0;
 		m_sft = 0;
-#ifdef CHD_PACK_SIZE
+#ifdef SHD_PACK_SIZE
 		m_tip = 0;
 #else
 		m_ab = 0;
@@ -221,7 +221,7 @@ protected:
 		}
 		constexpr Word zero = 0;
 		m_fac = ~zero;
-#ifdef CHD_PACK_SIZE
+#ifdef SHD_PACK_SIZE
 		m_tip = ~zero;
 #endif
 		if (m == n) {
@@ -229,7 +229,7 @@ protected:
 		}
 		m_fac = (((DoubleWord)m) << BITWIDTH) / n;
 		Word r = m_fac * n + n;
-#ifdef CHD_PACK_SIZE
+#ifdef SHD_PACK_SIZE
 		if (r <= m) {
 			m_fac += 1;
 			m_tip = 0;
@@ -251,7 +251,7 @@ public:
 #ifdef DISABLE_SOFT_DIVIDE
 		return m / m_val;
 #else
-#ifdef CHD_PACK_SIZE
+#ifdef SHD_PACK_SIZE
 		auto t = m_tip;
 #else
 		auto t = m_fac;
@@ -268,7 +268,7 @@ public:
 #ifdef DISABLE_SOFT_DIVIDE
 		return m % m_val;
 #else
-#ifdef CHD_PACK_SIZE
+#ifdef SHD_PACK_SIZE
 		auto t = m_tip;
 #else
 		auto t = m_fac;
@@ -355,7 +355,7 @@ struct Divisor<uint64_t> : public DivisorMR<uint64_t> {
 	}
 };
 
-#ifdef CHD_PACK_SIZE
+#ifdef SHD_PACK_SIZE
 #pragma pack()
 #endif
 
@@ -369,5 +369,5 @@ static inline Word operator%(Word m, const Divisor<Word>& d) noexcept {
 	return d.mod(m);
 }
 
-} //chd
-#endif //CHD_UTILS_H_
+} //shd
+#endif //SHD_UTILS_H_

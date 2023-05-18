@@ -1,5 +1,5 @@
 //==============================================================================
-// A modern implement of CHD algorithm.
+// Skew Hash and Displace Algorithm.
 // Copyright (C) 2020  Ruan Kunliang
 //
 // This library is free software; you can redistribute it and/or modify it under
@@ -17,8 +17,8 @@
 //==============================================================================
 
 #pragma once
-#ifndef CHD_PIPELINE_H_
-#define CHD_PIPELINE_H_
+#ifndef SHD_PIPELINE_H_
+#define SHD_PIPELINE_H_
 
 /* ========================================================================
 #include <iostream>
@@ -2124,4 +2124,4 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const
 	forward();
 }
 
-#endif //CHD_PIPELINE_H_
+#endif //SHD_PIPELINE_H_

@@ -1,5 +1,5 @@
 //==============================================================================
-// A modern implement of CHD algorithm.
+// Skew Hash and Displace Algorithm.
 // Copyright (C) 2020  Ruan Kunliang
 //
 // This library is free software; you can redistribute it and/or modify it under
@@ -21,7 +21,7 @@
 #include <cstring>
 #include <utils.h>
 
-class EmbeddingGenerator : public chd::IDataReader {
+class EmbeddingGenerator : public shd::IDataReader {
 public:
 	static constexpr uint64_t MASK0 = 0xaaaaaaaaaaaaaaaaUL;
 	static constexpr uint64_t MASK1 = 0x5555555555555555UL;
@@ -37,7 +37,7 @@ public:
 	size_t total() override {
 		return m_total;
 	}
-	chd::Record read(bool) override {
+	shd::Record read(bool) override {
 		m_current++;
 		auto arr = (uint64_t*)m_val;
 		arr[0] = m_current ^ m_mask;
@@ -56,7 +56,7 @@ private:
 	const uint64_t m_mask;
 };
 
-class VariedValueGenerator : public chd::IDataReader {
+class VariedValueGenerator : public shd::IDataReader {
 public:
 	explicit VariedValueGenerator(uint64_t begin, uint64_t total, unsigned shift=5U)
 		: m_current(begin-1), m_begin(begin), m_total(total), m_shift(shift)
@@ -70,7 +70,7 @@ public:
 	size_t total() override {
 		return m_total;
 	}
-	chd::Record read(bool) override {
+	shd::Record read(bool) override {
 		m_current++;
 		const uint8_t len = m_current + m_shift;
 		memset(m_val, len, len);
@@ -86,7 +86,7 @@ private:
 };
 
 
-class FakeWriter : public chd::IDataWriter {
+class FakeWriter : public shd::IDataWriter {
 public:
 	bool operator!() const noexcept override;
 	bool flush() noexcept override;

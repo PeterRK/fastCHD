@@ -1,5 +1,5 @@
 //==============================================================================
-// A modern implement of CHD algorithm.
+// Skew Hash and Displace Algorithm.
 // Copyright (C) 2020  Ruan Kunliang
 //
 // This library is free software; you can redistribute it and/or modify it under
@@ -25,11 +25,11 @@
 #include <string>
 #include <chrono>
 #include <sys/sysinfo.h>
-#include <chd.h>
+#include <shd.h>
 #include <gflags/gflags.h>
 #include "benchmark.h"
 
-DEFINE_string(file, "bench.chd", "dict filename");
+DEFINE_string(file, "bench.shd", "dict filename");
 DEFINE_uint32(thread, 4, "number of worker threads");
 DEFINE_bool(build, false, "build instead of fetching");
 DEFINE_bool(copy, false, "load by copy");
@@ -37,14 +37,14 @@ DEFINE_bool(copy, false, "load by copy");
 static constexpr size_t BILLION = 1UL << 30U;
 
 static int BenchBuild() {
-	chd::FileWriter output(FLAGS_file.c_str());
+	shd::FileWriter output(FLAGS_file.c_str());
 	if (!output) {
 		std::cout << "fail to create output file" << std::endl;
 		return -1;
 	}
 	const size_t piece = BILLION/FLAGS_thread;
 	const size_t remain = BILLION%FLAGS_thread;
-	std::vector<std::unique_ptr<chd::IDataReader>> input;
+	std::vector<std::unique_ptr<shd::IDataReader>> input;
 	input.reserve(FLAGS_thread);
 	size_t off = 0;
 	for (unsigned i = 0; i < FLAGS_thread; i++) {
@@ -53,11 +53,11 @@ static int BenchBuild() {
 		off += sz;
 	}
 
-	chd::g_trace_build_time = true;
+	shd::g_trace_build_time = true;
 
 	auto start = std::chrono::steady_clock::now();
 	auto ret = BuildDict(input, output);
-	if (ret != chd::BUILD_STATUS_OK) {
+	if (ret != shd::BUILD_STATUS_OK) {
 		std::cout << "fail to build: " << ret << std::endl;
 		return 2;
 	}
@@ -68,7 +68,7 @@ static int BenchBuild() {
 }
 
 static int BenchFetch() {
-	chd::PerfectHashtable dict(FLAGS_file, FLAGS_copy ? chd::PerfectHashtable::COPY_DATA : chd::PerfectHashtable::MAP_FETCH);
+	shd::PerfectHashtable dict(FLAGS_file, FLAGS_copy ? shd::PerfectHashtable::COPY_DATA : shd::PerfectHashtable::MAP_FETCH);
 	if (!dict) {
 		std::cout << "fail to load: " << FLAGS_file << std::endl;
 		return -1;

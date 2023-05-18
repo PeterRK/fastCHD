@@ -1,5 +1,5 @@
 //==============================================================================
-// A modern implement of CHD algorithm.
+// Skew Hash and Displace Algorithm.
 // Copyright (C) 2020  Ruan Kunliang
 //
 // This library is free software; you can redistribute it and/or modify it under
@@ -18,7 +18,7 @@
 
 #include "internal.h"
 
-namespace chd {
+namespace shd {
 
 static FORCE_INLINE uint64_t Rot64(uint64_t x, unsigned k) {
 	return (x << k) | (x >> (64U - k));
@@ -125,4 +125,4 @@ V128 HashTo128(const uint8_t* msg, uint8_t len, uint64_t seed) {
 	return {a, b};
 }
 
-} //chd
+} //shd

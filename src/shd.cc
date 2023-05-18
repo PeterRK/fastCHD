@@ -1,5 +1,5 @@
 //==============================================================================
-// A modern implement of CHD algorithm.
+// Skew Hash and Displace Algorithm.
 // Copyright (C) 2020  Ruan Kunliang
 //
 // This library is free software; you can redistribute it and/or modify it under
@@ -19,17 +19,17 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include "internal.h"
-#include "chd.h"
+#include "shd.h"
 
 
-namespace chd {
+namespace shd {
 
 std::unique_ptr<uint8_t[]> CreatePackView(const uint8_t* addr, size_t size) {
 	size_t addr_off = sizeof(Header);
 	if (size < addr_off) return nullptr;
 
 	auto header = (const Header*)addr;
-	if (header->magic != CHD_MAGIC) {
+	if (header->magic != SHD_MAGIC) {
 		return nullptr;
 	}
 	switch (header->type) {
@@ -61,7 +61,7 @@ std::unique_ptr<uint8_t[]> CreatePackView(const uint8_t* addr, size_t size) {
 	uint64_t total_item = 0;
 	for (unsigned i = 0; i < header->seg_cnt; i++) {
 		index->segments[i] = SegmentView{};
-		index->segments[i].l1sz = L1Size(parts[i]);
+		index->segments[i].l1bd = L1Band(parts[i]);
 		index->segments[i].l2sz = L2Size(parts[i]);
 		index->segments[i].offset = total_item;
 		total_item += parts[i];
@@ -259,4 +259,4 @@ BuildStatus PerfectHashtable::derive(const DataReaders& in, IDataWriter& out, Re
 	return Rebuild(*base, in, out, retry);
 }
 
-} //chd
+} //shd

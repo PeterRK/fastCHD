@@ -1,5 +1,5 @@
 //==============================================================================
-// A modern implement of CHD algorithm.
+// Skew Hash and Displace Algorithm.
 // Copyright (C) 2020  Ruan Kunliang
 //
 // This library is free software; you can redistribute it and/or modify it under
@@ -21,14 +21,14 @@
 #include <vector>
 #include <string>
 #include <gtest/gtest.h>
-#include <chd.h>
+#include <shd.h>
 #include "test.h"
 
 static constexpr unsigned PIECE = 1000;
 
 template <typename T, typename Tips>
-static chd::DataReaders CreateReaders(unsigned n, Tips tips) {
-	chd::DataReaders out;
+static shd::DataReaders CreateReaders(unsigned n, Tips tips) {
+	shd::DataReaders out;
 	out.reserve(n);
 	for (unsigned i = 0; i < n; i++) {
 		out.push_back(std::make_unique<T>(i*PIECE, PIECE, tips));
@@ -36,51 +36,51 @@ static chd::DataReaders CreateReaders(unsigned n, Tips tips) {
 	return out;
 }
 
-TEST(CHD, Build) {
+TEST(SHD, Build) {
 	FakeWriter fake_output;
 
-	chd::DataReaders fake_input;
-	ASSERT_EQ(chd::BuildSet(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
-	ASSERT_EQ(chd::BuildDict(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
-	ASSERT_EQ(chd::BuildDictWithVariedValue(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
+	shd::DataReaders fake_input;
+	ASSERT_EQ(shd::BuildSet(fake_input, fake_output), shd::BUILD_STATUS_BAD_INPUT);
+	ASSERT_EQ(shd::BuildDict(fake_input, fake_output), shd::BUILD_STATUS_BAD_INPUT);
+	ASSERT_EQ(shd::BuildDictWithVariedValue(fake_input, fake_output), shd::BUILD_STATUS_BAD_INPUT);
 
 	fake_input.push_back(std::make_unique<EmbeddingGenerator>(0, 0));
-	ASSERT_EQ(chd::BuildSet(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
-	ASSERT_EQ(chd::BuildDict(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
-	ASSERT_EQ(chd::BuildDictWithVariedValue(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
+	ASSERT_EQ(shd::BuildSet(fake_input, fake_output), shd::BUILD_STATUS_BAD_INPUT);
+	ASSERT_EQ(shd::BuildDict(fake_input, fake_output), shd::BUILD_STATUS_BAD_INPUT);
+	ASSERT_EQ(shd::BuildDictWithVariedValue(fake_input, fake_output), shd::BUILD_STATUS_BAD_INPUT);
 
 	fake_input.push_back(std::make_unique<EmbeddingGenerator>(0, 1));
-	ASSERT_EQ(chd::BuildSet(fake_input, fake_output), chd::BUILD_STATUS_OK);
-	ASSERT_EQ(chd::BuildDict(fake_input, fake_output), chd::BUILD_STATUS_OK);
-	ASSERT_EQ(chd::BuildDictWithVariedValue(fake_input, fake_output), chd::BUILD_STATUS_OK);
+	ASSERT_EQ(shd::BuildSet(fake_input, fake_output), shd::BUILD_STATUS_OK);
+	ASSERT_EQ(shd::BuildDict(fake_input, fake_output), shd::BUILD_STATUS_OK);
+	ASSERT_EQ(shd::BuildDictWithVariedValue(fake_input, fake_output), shd::BUILD_STATUS_OK);
 
 	auto emb_gen = CreateReaders<EmbeddingGenerator>(1, EmbeddingGenerator::MASK0);
-	ASSERT_EQ(chd::BuildSet(emb_gen, fake_output), chd::BUILD_STATUS_OK);
-	ASSERT_EQ(chd::BuildDict(emb_gen, fake_output), chd::BUILD_STATUS_OK);
-	ASSERT_EQ(chd::BuildDictWithVariedValue(emb_gen, fake_output), chd::BUILD_STATUS_OK);
+	ASSERT_EQ(shd::BuildSet(emb_gen, fake_output), shd::BUILD_STATUS_OK);
+	ASSERT_EQ(shd::BuildDict(emb_gen, fake_output), shd::BUILD_STATUS_OK);
+	ASSERT_EQ(shd::BuildDictWithVariedValue(emb_gen, fake_output), shd::BUILD_STATUS_OK);
 
 	auto var_gen = CreateReaders<VariedValueGenerator>(1, 5U);
-	ASSERT_EQ(chd::BuildDict(var_gen, fake_output), chd::BUILD_STATUS_BAD_INPUT);
-	ASSERT_EQ(chd::BuildDictWithVariedValue(var_gen, fake_output), chd::BUILD_STATUS_OK);
+	ASSERT_EQ(shd::BuildDict(var_gen, fake_output), shd::BUILD_STATUS_BAD_INPUT);
+	ASSERT_EQ(shd::BuildDictWithVariedValue(var_gen, fake_output), shd::BUILD_STATUS_OK);
 
 	emb_gen = CreateReaders<EmbeddingGenerator>(3, EmbeddingGenerator::MASK0);
-	ASSERT_EQ(chd::BuildSet(emb_gen, fake_output), chd::BUILD_STATUS_OK);
-	ASSERT_EQ(chd::BuildDict(emb_gen, fake_output), chd::BUILD_STATUS_OK);
+	ASSERT_EQ(shd::BuildSet(emb_gen, fake_output), shd::BUILD_STATUS_OK);
+	ASSERT_EQ(shd::BuildDict(emb_gen, fake_output), shd::BUILD_STATUS_OK);
 
 	var_gen = CreateReaders<VariedValueGenerator>(3, 5U);
-	ASSERT_EQ(chd::BuildDictWithVariedValue(var_gen, fake_output), chd::BUILD_STATUS_OK);
+	ASSERT_EQ(shd::BuildDictWithVariedValue(var_gen, fake_output), shd::BUILD_STATUS_OK);
 }
 
-TEST(CHD, KeySet) {
-	const std::string filename = "keyset.chd";
+TEST(SHD, KeySet) {
+	const std::string filename = "keyset.shd";
 	{
-		chd::FileWriter output(filename.c_str());
+		shd::FileWriter output(filename.c_str());
 		auto input = CreateReaders<EmbeddingGenerator>(2, EmbeddingGenerator::MASK0);
-		ASSERT_EQ(chd::BuildSet(input, output), chd::BUILD_STATUS_OK);
+		ASSERT_EQ(shd::BuildSet(input, output), shd::BUILD_STATUS_OK);
 	}
-	chd::PerfectHashtable dict(filename);
+	shd::PerfectHashtable dict(filename);
 	ASSERT_FALSE(!dict);
-	ASSERT_EQ(dict.type(), chd::PerfectHashtable::KEY_SET);
+	ASSERT_EQ(dict.type(), shd::PerfectHashtable::KEY_SET);
 	ASSERT_EQ(dict.key_len(), sizeof(uint64_t));
 	ASSERT_EQ(dict.val_len(), 0);
 	ASSERT_EQ(dict.item(), PIECE*2);
@@ -122,8 +122,8 @@ TEST(CHD, KeySet) {
 	ASSERT_EQ(dict.batch_fetch(keys.size(), (const uint8_t*)keys.data(), (uint8_t*)out.data()), 0);
 }
 
-TEST(CHD, SmallSet) {
-	chd::DataReaders input(1);
+TEST(SHD, SmallSet) {
+	shd::DataReaders input(1);
 	const uint64_t shift = 9999;
 	const unsigned limit = 16;
 	std::vector<uint64_t> keys(limit);
@@ -135,15 +135,15 @@ TEST(CHD, SmallSet) {
 		in[i] = (const uint8_t*)&keys[i];
 	}
 	std::vector<const uint8_t*> out(keys.size());
-	const std::string filename = "small.chd";
+	const std::string filename = "small.shd";
 	for (unsigned i = 1; i < limit; i++) {
 		input[0] = std::make_unique<EmbeddingGenerator>(shift, i);
 		{
-			chd::FileWriter output(filename.c_str());
-			ASSERT_EQ(chd::BuildSet(input, output), chd::BUILD_STATUS_OK);
+			shd::FileWriter output(filename.c_str());
+			ASSERT_EQ(shd::BuildSet(input, output), shd::BUILD_STATUS_OK);
 		}
 		{
-			chd::PerfectHashtable dict(filename);
+			shd::PerfectHashtable dict(filename);
 			ASSERT_FALSE(!dict);
 			for (auto& p : out) {
 				p = nullptr;
@@ -159,16 +159,16 @@ TEST(CHD, SmallSet) {
 	}
 }
 
-TEST(CHD, InlinedDict) {
-	const std::string filename = "dict.chd";
+TEST(SHD, InlinedDict) {
+	const std::string filename = "dict.shd";
 	{
-		chd::FileWriter output(filename.c_str());
+		shd::FileWriter output(filename.c_str());
 		auto input = CreateReaders<EmbeddingGenerator>(2, EmbeddingGenerator::MASK0);
-		ASSERT_EQ(chd::BuildDict(input, output), chd::BUILD_STATUS_OK);
+		ASSERT_EQ(shd::BuildDict(input, output), shd::BUILD_STATUS_OK);
 	}
-	chd::PerfectHashtable dict(filename);
+	shd::PerfectHashtable dict(filename);
 	ASSERT_FALSE(!dict);
-	ASSERT_EQ(dict.type(), chd::PerfectHashtable::KV_INLINE);
+	ASSERT_EQ(dict.type(), shd::PerfectHashtable::KV_INLINE);
 	ASSERT_EQ(dict.key_len(), sizeof(uint64_t));
 	ASSERT_EQ(dict.val_len(), EmbeddingGenerator::VALUE_SIZE);
 	ASSERT_EQ(dict.item(), PIECE*2);
@@ -222,16 +222,16 @@ TEST(CHD, InlinedDict) {
 	}
 }
 
-TEST(CHD, VariedDict) {
-	const std::string filename = "var-dict.chd";
+TEST(SHD, VariedDict) {
+	const std::string filename = "var-dict.shd";
 	{
-		chd::FileWriter output(filename.c_str());
+		shd::FileWriter output(filename.c_str());
 		auto input = CreateReaders<VariedValueGenerator>(2, 5U);
-		ASSERT_EQ(chd::BuildDictWithVariedValue(input, output), chd::BUILD_STATUS_OK);
+		ASSERT_EQ(shd::BuildDictWithVariedValue(input, output), shd::BUILD_STATUS_OK);
 	}
-	chd::PerfectHashtable dict(filename);
+	shd::PerfectHashtable dict(filename);
 	ASSERT_FALSE(!dict);
-	ASSERT_EQ(dict.type(), chd::PerfectHashtable::KV_SEPARATED);
+	ASSERT_EQ(dict.type(), shd::PerfectHashtable::KV_SEPARATED);
 	ASSERT_EQ(dict.key_len(), sizeof(uint64_t));
 	ASSERT_EQ(dict.item(), PIECE*2);
 
@@ -256,21 +256,21 @@ TEST(CHD, VariedDict) {
 	ASSERT_EQ(dict.batch_fetch(1, junk.get(), junk.get()), 0);
 }
 
-TEST(CHD, FetchWithPatch) {
-	const std::string base_filename = "base.chd";
-	const std::string patch_filename = "patch.chd";
+TEST(SHD, FetchWithPatch) {
+	const std::string base_filename = "base.shd";
+	const std::string patch_filename = "patch.shd";
 	{
-		chd::FileWriter base_output(base_filename.c_str());
+		shd::FileWriter base_output(base_filename.c_str());
 		auto base_input = CreateReaders<EmbeddingGenerator>(2, EmbeddingGenerator::MASK1);
-		ASSERT_EQ(chd::BuildDict(base_input, base_output), chd::BUILD_STATUS_OK);
-		chd::FileWriter patch_output(patch_filename.c_str());
+		ASSERT_EQ(shd::BuildDict(base_input, base_output), shd::BUILD_STATUS_OK);
+		shd::FileWriter patch_output(patch_filename.c_str());
 		auto patch_input = CreateReaders<EmbeddingGenerator>(1, EmbeddingGenerator::MASK0);
-		ASSERT_EQ(chd::BuildDict(patch_input, patch_output), chd::BUILD_STATUS_OK);
+		ASSERT_EQ(shd::BuildDict(patch_input, patch_output), shd::BUILD_STATUS_OK);
 	}
 
-	chd::PerfectHashtable base(base_filename);
+	shd::PerfectHashtable base(base_filename);
 	ASSERT_FALSE(!base);
-	chd::PerfectHashtable patch(patch_filename);
+	shd::PerfectHashtable patch(patch_filename);
 	ASSERT_FALSE(!patch);
 
 	std::vector<uint64_t> keys(PIECE*2);
@@ -307,23 +307,23 @@ TEST(CHD, FetchWithPatch) {
 	}
 }
 
-TEST(CHD, RebuildInlinedDict) {
-	std::string filename = "dict-old.chd";
+TEST(SHD, RebuildInlinedDict) {
+	std::string filename = "dict-old.shd";
 	{
-		chd::FileWriter output(filename.c_str());
+		shd::FileWriter output(filename.c_str());
 		auto input = CreateReaders<EmbeddingGenerator>(3, EmbeddingGenerator::MASK1);
-		ASSERT_EQ(chd::BuildDict(input, output), chd::BUILD_STATUS_OK);
+		ASSERT_EQ(shd::BuildDict(input, output), shd::BUILD_STATUS_OK);
 	}
 	{
-		chd::PerfectHashtable dict(filename);
+		shd::PerfectHashtable dict(filename);
 		ASSERT_FALSE(!dict);
-		filename = "dict-new.chd";
-		chd::FileWriter output(filename.c_str());
+		filename = "dict-new.shd";
+		shd::FileWriter output(filename.c_str());
 		auto input = CreateReaders<EmbeddingGenerator>(2, EmbeddingGenerator::MASK0);
-		ASSERT_EQ(dict.derive(input, output), chd::BUILD_STATUS_OK);
+		ASSERT_EQ(dict.derive(input, output), shd::BUILD_STATUS_OK);
 	}
 
-	chd::PerfectHashtable dict(filename);
+	shd::PerfectHashtable dict(filename);
 	ASSERT_FALSE(!dict);
 
 	std::vector<uint64_t> keys(PIECE*2);
@@ -360,23 +360,23 @@ TEST(CHD, RebuildInlinedDict) {
 	}
 }
 
-TEST(CHD, RebuildVariedDict) {
-	std::string filename = "var-dict-old.chd";
+TEST(SHD, RebuildVariedDict) {
+	std::string filename = "var-dict-old.shd";
 	{
-		chd::FileWriter output(filename.c_str());
+		shd::FileWriter output(filename.c_str());
 		auto input = CreateReaders<VariedValueGenerator>(2, 2U);
-		ASSERT_EQ(chd::BuildDictWithVariedValue(input, output), chd::BUILD_STATUS_OK);
+		ASSERT_EQ(shd::BuildDictWithVariedValue(input, output), shd::BUILD_STATUS_OK);
 	}
 	{
-		chd::PerfectHashtable dict(filename);
+		shd::PerfectHashtable dict(filename);
 		ASSERT_FALSE(!dict);
-		filename = "var-dict-new.chd";
-		chd::FileWriter output(filename.c_str());
+		filename = "var-dict-new.shd";
+		shd::FileWriter output(filename.c_str());
 		auto input = CreateReaders<VariedValueGenerator>(1, 32U);
-		ASSERT_EQ(dict.derive(input, output), chd::BUILD_STATUS_OK);
+		ASSERT_EQ(dict.derive(input, output), shd::BUILD_STATUS_OK);
 	}
 
-	chd::PerfectHashtable dict(filename);
+	shd::PerfectHashtable dict(filename);
 	ASSERT_FALSE(!dict);
 
 	VariedValueGenerator checker0(0, PIECE, 32U);

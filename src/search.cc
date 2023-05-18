@@ -1,5 +1,5 @@
 //==============================================================================
-// A modern implement of CHD algorithm.
+// Skew Hash and Displace Algorithm.
 // Copyright (C) 2020  Ruan Kunliang
 //
 // This library is free software; you can redistribute it and/or modify it under
@@ -22,7 +22,7 @@
 #include "internal.h"
 #include "pipeline.h"
 
-namespace chd {
+namespace shd {
 
 struct Step1 {
 	const SegmentView* seg;
@@ -44,7 +44,7 @@ static FORCE_INLINE Step1 Calc1(const PackView& index, const uint8_t* key, uint8
 	Step1 out;
 	out.id = GenID(index.seed, key, key_len);
 	out.seg = &index.segments[L0Hash(out.id) % index.l0sz];
-	out.l1pos = L1Hash(out.id) % out.seg->l1sz;
+	out.l1pos = SkewMap(L1Hash(out.id), out.seg->l1bd);
 	return out;
 }
 
@@ -471,4 +471,4 @@ void BatchDataMapping(const PackView& index, uint8_t* space, size_t batch,
 #undef BUBBLE_GROUP
 }
 
-} //chd
+} //shd

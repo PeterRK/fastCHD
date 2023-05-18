@@ -1,5 +1,5 @@
 //==============================================================================
-// A modern implement of CHD algorithm.
+// Skew Hash and Displace Algorithm.
 // Copyright (C) 2020  Ruan Kunliang
 //
 // This library is free software; you can redistribute it and/or modify it under
@@ -17,8 +17,8 @@
 //==============================================================================
 
 #pragma once
-#ifndef CHD_H_
-#define CHD_H_
+#ifndef SHD_H_
+#define SHD_H_
 
 #include <cstdint>
 #include <string>
@@ -28,7 +28,7 @@
 #include <type_traits>
 #include "utils.h"
 
-namespace chd {
+namespace shd {
 
 static constexpr size_t MAX_KEY_LEN = UINT8_MAX;
 static constexpr size_t MAX_INLINE_VALUE_LEN = UINT16_MAX;
@@ -45,7 +45,7 @@ struct Retry {
 	uint8_t conflict = 0;
 	uint8_t total = 0;
 };
-static constexpr Retry DEFAULT_RETRY = {1, 3};
+static constexpr Retry DEFAULT_RETRY = {1, 4};
 
 using DataReaders = std::vector<std::unique_ptr<IDataReader>>;
 
@@ -117,5 +117,5 @@ private:
 	void _post_init() noexcept;
 };
 
-} //chd
-#endif //CHD_H_
+} //shd
+#endif //SHD_H_
