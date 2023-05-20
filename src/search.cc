@@ -118,7 +118,7 @@ static FORCE_INLINE Step3 Process3(const PackView& pack, const Step2& in, bool f
 
 
 #ifndef PIPELINE_LEVEL
-#define PIPELINE_LEVEL 3
+#define PIPELINE_LEVEL 4
 #endif
 
 #define BUBBLE(type) [](const type& in, size_t) -> type { return in; }
