@@ -5,7 +5,7 @@
 本算法在[CHD](http://cmph.sourceforge.net/chd.html)算法的基础上做了改进，使用倾斜Hash作为一级Hash函数，令头部桶中元素天然比尾部桶多。
 
 ![](images/shd.png)
-在一级Hash环节，倾斜Hash比CHD使用的均匀更合理，因此SHD算法可以以更高的密度达到和CHD算法接近的性能。
+在一级Hash环节，倾斜Hash比CHD使用的均匀Hash更合理，因此SHD算法可以以更高的密度达到和CHD算法接近的性能。
 
 ![](images/build.png)
 十亿数据的构建耗时在数十秒水平，稍逊于fastCHD（见本项目的chd分支）。
