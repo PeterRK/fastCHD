@@ -137,7 +137,7 @@ static FORCE_INLINE void PrefetchForWrite(const void* ptr) {
 }
 
 static FORCE_INLINE void PrefetchBit(const uint8_t bitmap[], size_t pos) {
-	return __builtin_prefetch(&bitmap[pos>>3U], 1);
+	PrefetchForNext(&bitmap[pos>>3U]);
 }
 
 static FORCE_INLINE bool TestBit(const uint8_t bitmap[], size_t pos) {

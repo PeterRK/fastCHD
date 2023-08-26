@@ -87,7 +87,7 @@ static bool HasConflict(V96 ids[], uint32_t cnt) {
 
 static FORCE_INLINE std::tuple<uint8_t, BuildStatus>
 Mapping(V96 ids[], uint32_t cnt, uint8_t sd8, uint8_t bitmap[], const Divisor<uint64_t>& range) {
-	auto mini_batch_mapping = [bitmap,range](uint8_t sd8, V96 ids[], unsigned n) {
+	auto mini_batch_mapping = [bitmap,range](uint8_t sd8, V96 ids[], unsigned n)->bool {
 		assert(n <= MINI_BATCH);
 		uint64_t pos[MINI_BATCH];
 		for (unsigned i = 0; i < n; i++) {
@@ -95,13 +95,12 @@ Mapping(V96 ids[], uint32_t cnt, uint8_t sd8, uint8_t bitmap[], const Divisor<ui
 			PrefetchBit(bitmap, pos[i]);
 		}
 		for (unsigned i = 0; i < n; i++) {
-			if (TestBit(bitmap, pos[i])) {
+			if (!TestAndSetBit(bitmap, pos[i])) {
 				for (unsigned j = 0; j < i; j++) {
 					ClearBit(bitmap, pos[j]);
 				}
 				return false;
 			}
-			SetBit(bitmap, pos[i]);
 		}
 		return true;
 	};
@@ -129,6 +128,16 @@ Mapping(V96 ids[], uint32_t cnt, uint8_t sd8, uint8_t bitmap[], const Divisor<ui
 	};
 
 	assert(cnt != 0);
+	if (cnt == 1) {
+		for (unsigned n = 256; n-- != 0; sd8++) {
+			uint64_t pos = L2Hash(ids[0], sd8) % range;
+			if (TestAndSetBit(bitmap, pos)) {
+				return {sd8, BUILD_STATUS_OK};
+			}
+		}
+		return {sd8, BUILD_STATUS_OUT_OF_CHANCE};
+	}
+
 	constexpr unsigned FIRST_TRIES = 96;
 	constexpr unsigned SECOND_TRIES = 256 - FIRST_TRIES;
 	if (try_to_map(FIRST_TRIES)) {
@@ -140,7 +149,7 @@ Mapping(V96 ids[], uint32_t cnt, uint8_t sd8, uint8_t bitmap[], const Divisor<ui
 	if (try_to_map(SECOND_TRIES)) {
 		return {sd8, BUILD_STATUS_OK};
 	}
-	return {sd8, BUILD_STATUS_OF_CHANCE};
+	return {sd8, BUILD_STATUS_OUT_OF_CHANCE};
 }
 
 struct IndexPiece {
@@ -449,8 +458,8 @@ static BuildStatus Build(V96 ids[], V96 shadow[], std::vector<IndexPiece>& out) 
 	for (auto part : part_status) {
 		if (part == BUILD_STATUS_CONFLICT) {
 			status = BUILD_STATUS_CONFLICT;
-		} else if (part == BUILD_STATUS_OF_CHANCE && status != BUILD_STATUS_CONFLICT) {
-			status = BUILD_STATUS_OF_CHANCE;
+		} else if (part == BUILD_STATUS_OUT_OF_CHANCE && status != BUILD_STATUS_CONFLICT) {
+			status = BUILD_STATUS_OUT_OF_CHANCE;
 		}
 	}
 	return status;
@@ -751,7 +760,7 @@ static BuildStatus BuildAndDump(const DataReaders& in, IDataWriter& out, const B
 				if (retry.conflict-- == 0) {
 					return status;
 				}
-			case BUILD_STATUS_OF_CHANCE:
+			case BUILD_STATUS_OUT_OF_CHANCE:
 				if (retry.total-- == 0) {
 					return status;
 				}
