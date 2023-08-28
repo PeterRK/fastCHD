@@ -1,6 +1,6 @@
 //==============================================================================
 // Skew Hash and Displace Algorithm.
-// Copyright (C) 2020  Ruan Kunliang
+// Copyright (C) 2020	Ruan Kunliang
 //
 // This library is free software; you can redistribute it and/or modify it under
 // the terms of the GNU Lesser General Public License as published by the Free
@@ -85,8 +85,7 @@ static bool HasConflict(V96 ids[], uint32_t cnt) {
 	return false;
 }
 
-static FORCE_INLINE std::tuple<uint8_t, BuildStatus>
-Mapping(V96 ids[], uint32_t cnt, uint8_t sd8, uint8_t bitmap[], const Divisor<uint64_t>& range) {
+static bool TryToMapLarge(V96 ids[], uint32_t cnt, uint8_t& sd8, uint8_t bitmap[], const Divisor<uint64_t>& range, unsigned n) {
 	auto mini_batch_mapping = [bitmap,range](uint8_t sd8, V96 ids[], unsigned n)->bool {
 		assert(n <= MINI_BATCH);
 		uint64_t pos[MINI_BATCH];
@@ -104,50 +103,115 @@ Mapping(V96 ids[], uint32_t cnt, uint8_t sd8, uint8_t bitmap[], const Divisor<ui
 		}
 		return true;
 	};
-	auto try_to_map = [&mini_batch_mapping,ids,cnt,bitmap,range,&sd8](unsigned n)->bool {
-		while (n-- != 0) {
-			auto tail = ids;
-			auto remain = cnt;
-			while (remain > MINI_BATCH) {
-				if (!mini_batch_mapping(sd8, tail, MINI_BATCH)) {
+
+	assert(cnt > MINI_BATCH);
+	while (n-- != 0) {
+		auto tail = ids;
+		auto remain = cnt;
+		do {
+			if (!mini_batch_mapping(sd8, tail, MINI_BATCH)) {
+				goto retry;
+			}
+			tail += MINI_BATCH;
+			remain -= MINI_BATCH;
+		} while (remain > MINI_BATCH);
+		if (mini_batch_mapping(sd8, tail, remain)) {
+			return true;
+		}
+	retry:
+		for (auto p = ids; p < tail; p++) {
+			ClearBit(bitmap, L2Hash(*p, sd8) % range);
+		}
+		sd8++;
+	}
+	return false;
+}
+
+static bool TryToMapSmall(V96 ids[], uint32_t cnt, uint8_t& sd8, uint8_t bitmap[], const Divisor<uint64_t>& range, unsigned n) {
+	assert(cnt <= MINI_BATCH);
+	for (unsigned m = 0; m < n; ) {
+		uint64_t pos[MINI_BATCH];
+		auto sd8x = sd8;
+		for (unsigned i = m, off = 0; i < n && off+cnt <= MINI_BATCH; i++) {
+			for (unsigned j = 0; j < cnt; j++) {
+				auto t = L2Hash(ids[j], sd8x) % range;
+				PrefetchBit(bitmap, t);
+				pos[off++] = t;
+			}
+			sd8x++;
+		}
+		for (unsigned off = 0; m < n && off+cnt <= MINI_BATCH; m++) {
+			for (unsigned j = 0; j < cnt; j++) {
+				if (!TestAndSetBit(bitmap, pos[off+j])) {
+					for (unsigned k = 0; k < j; k++) {
+						ClearBit(bitmap, pos[off+k]);
+					}
 					goto retry;
 				}
-				tail += MINI_BATCH;
-				remain -= MINI_BATCH;
 			}
-			if (mini_batch_mapping(sd8, tail, remain)) {
+			return true;
+        retry:
+			off += cnt;
+			sd8++;
+		}
+	}
+	return false;
+}
+
+static std::tuple<uint8_t, BuildStatus>
+Mapping(V96 ids[], uint32_t cnt, uint8_t sd8, uint8_t bitmap[], const Divisor<uint64_t>& range) {
+	auto mini_batch_try = [bitmap,range,&sd8](V96 id, unsigned n)->bool {
+		assert(n <= MINI_BATCH);
+		uint64_t pos[MINI_BATCH];
+		auto sd8x = sd8;
+		for (unsigned i = 0; i < n; i++) {
+			pos[i] = L2Hash(id, sd8x++) % range;
+			PrefetchBit(bitmap, pos[i]);
+		}
+		for (unsigned i = 0; i < n; i++) {
+			if (TestAndSetBit(bitmap, pos[i])) {
 				return true;
-			}
-		retry:
-			for (auto p = ids; p < tail; p++) {
-				ClearBit(bitmap, L2Hash(*p, sd8) % range);
 			}
 			sd8++;
 		}
 		return false;
 	};
 
-	assert(cnt != 0);
-	if (cnt == 1) {
-		for (unsigned n = 256; n-- != 0; sd8++) {
-			uint64_t pos = L2Hash(ids[0], sd8) % range;
-			if (TestAndSetBit(bitmap, pos)) {
+	constexpr unsigned TOTAL_TRIES = 256;
+	if (cnt > MINI_BATCH) {
+		constexpr unsigned FIRST_TRIES = 56;
+		constexpr unsigned SECOND_TRIES = TOTAL_TRIES - FIRST_TRIES;
+		if (TryToMapLarge(ids, cnt, sd8, bitmap, range, FIRST_TRIES)) {
+			return {sd8, BUILD_STATUS_OK};
+		}
+		if (HasConflict(ids, cnt)) {
+			return {sd8, BUILD_STATUS_CONFLICT};
+		}
+		if (TryToMapLarge(ids, cnt, sd8, bitmap, range, SECOND_TRIES)) {
+			return {sd8, BUILD_STATUS_OK};
+		}
+	} else if (cnt != 1) {
+		constexpr unsigned FIRST_TRIES = 96;
+		constexpr unsigned SECOND_TRIES = TOTAL_TRIES - FIRST_TRIES;
+		if (TryToMapSmall(ids, cnt, sd8, bitmap, range, FIRST_TRIES)) {
+			return {sd8, BUILD_STATUS_OK};
+		}
+		if (HasConflict(ids, cnt)) {
+			return {sd8, BUILD_STATUS_CONFLICT};
+		}
+		if (TryToMapSmall(ids, cnt, sd8, bitmap, range, SECOND_TRIES)) {
+			return {sd8, BUILD_STATUS_OK};
+		}
+	} else {
+		auto remain = TOTAL_TRIES;
+		for (; remain > MINI_BATCH; remain -= MINI_BATCH) {
+			if (mini_batch_try(ids[0], MINI_BATCH)) {
 				return {sd8, BUILD_STATUS_OK};
 			}
 		}
-		return {sd8, BUILD_STATUS_OUT_OF_CHANCE};
-	}
-
-	constexpr unsigned FIRST_TRIES = 96;
-	constexpr unsigned SECOND_TRIES = 256 - FIRST_TRIES;
-	if (try_to_map(FIRST_TRIES)) {
-		return {sd8, BUILD_STATUS_OK};
-	}
-	if (HasConflict(ids, cnt)) {
-		return {sd8, BUILD_STATUS_CONFLICT};
-	}
-	if (try_to_map(SECOND_TRIES)) {
-		return {sd8, BUILD_STATUS_OK};
+		if (mini_batch_try(ids[0], remain)) {
+			return {sd8, BUILD_STATUS_OK};
+		}
 	}
 	return {sd8, BUILD_STATUS_OUT_OF_CHANCE};
 }
