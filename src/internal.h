@@ -24,23 +24,10 @@
 #include <functional>
 //#define SHD_PACK_SIZE 4
 #include <shd.h>
-
-#define FORCE_INLINE inline __attribute__((always_inline))
-#define NOINLINE __attribute__((noinline))
-
-#define LIKELY(exp) __builtin_expect((exp),1)
-#define UNLIKELY(exp) __builtin_expect((exp),0)
-
-#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
-#error "little endian only"
-#endif
+#include "common.h"
 
 namespace shd {
 
-struct V128 {
-	uint64_t l;
-	uint64_t h;
-};
 struct V96 {
 	uint32_t u[3];
 };
@@ -64,8 +51,6 @@ static FORCE_INLINE bool operator==(const V96& a, const V96& b) {
 	V96X bx{.v = b};
 	return ax.u.l64 == bx.u.l64 && ax.u.h32 == bx.u.h32;
 }
-
-extern V128 HashTo128(const uint8_t* msg, uint8_t len, uint64_t seed);
 
 static FORCE_INLINE V96 GenID(uint32_t seed, const uint8_t* key, uint8_t len) {
 	V128X tmp{.v = HashTo128(key, len, seed)};
@@ -124,16 +109,6 @@ static FORCE_INLINE bool AtomicTestAndSetBit(uint8_t bitmap[], uint64_t pos) {
 			return true;
 		}
 	}
-}
-
-static FORCE_INLINE void PrefetchForNext(const void* ptr) {
-	__builtin_prefetch(ptr, 0, 3);
-}
-static FORCE_INLINE void PrefetchForFuture(const void* ptr) {
-	__builtin_prefetch(ptr, 0, 0);
-}
-static FORCE_INLINE void PrefetchForWrite(const void* ptr) {
-	__builtin_prefetch(ptr, 1, 1);
 }
 
 static FORCE_INLINE void PrefetchBit(const uint8_t bitmap[], size_t pos) {
