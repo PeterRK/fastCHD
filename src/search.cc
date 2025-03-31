@@ -91,7 +91,6 @@ uint64_t CalcPos(const PackView& index, const uint8_t* key, uint8_t key_len) {
 	return CalcPos(Calc2(Calc1(index, key, key_len)));
 }
 
-
 #ifndef CACHE_BLOCK_SIZE
 #define CACHE_BLOCK_SIZE 64U
 #endif
@@ -116,53 +115,62 @@ static FORCE_INLINE Step3 Process3(const PackView& pack, const Step2& in, bool f
 	return out;
 }
 
+static constexpr unsigned WINDOW_SIZE = 32;
 
-#ifndef PIPELINE_LEVEL
-#define PIPELINE_LEVEL 4
-#endif
+void BatchLocate(const PackView& index, unsigned batch, const uint8_t* __restrict__ keys,
+				 uint8_t key_len, uint64_t* __restrict__ out) {
+	union {
+		Step1 s1;
+		Step2 s2;
+	} state[WINDOW_SIZE];
 
-#define BUBBLE(type) [](const type& in, size_t) -> type { return in; }
+	for (unsigned i = 0; i < batch; i += WINDOW_SIZE) {
+		auto m = std::min(WINDOW_SIZE, batch-i);
+		for (unsigned j = 0; j < m; j++) {
+			state[j].s1 = Process1(index, keys, key_len);
+			keys += key_len;
+		}
+		for (unsigned j = 0; j < m; j++) {
+			state[j].s2 = Process2(state[j].s1);
+		}
+		for (unsigned j = 0; j < m; j++) {
+			out[i+j] = CalcPos(state[j].s2);
+		}
+	}
+}
 
 unsigned BatchSearch(const PackView& pack, unsigned batch, const uint8_t* const keys[], const uint8_t* out[]) {
 	if (pack.type != Type::KV_INLINE && pack.type != Type::KEY_SET) {
 		return 0;
 	}
-
-#if PIPELINE_LEVEL >= 3
-#define BUBBLE_GROUP(type) BUBBLE(type), BUBBLE(type), BUBBLE(type),
-#elif PIPELINE_LEVEL >= 2
-#define BUBBLE_GROUP(type) BUBBLE(type), BUBBLE(type),
-#elif PIPELINE_LEVEL >= 1
-#define BUBBLE_GROUP(type) BUBBLE(type),
-#else
-#define BUBBLE_GROUP(type)
-#endif
-
+	union {
+		Step1 s1;
+		Step2 s2;
+		Step3 s3;
+	} state[WINDOW_SIZE];
 	unsigned hit = 0;
-	Pipeline(batch,
-			[&pack, keys](unsigned i) -> Step1 {
-				return Process1(pack, keys[i]);
-			},
-			BUBBLE_GROUP(Step1)
-			[](const Step1& in, unsigned) -> Step2 {
-				return Process2(in);
-			},
-			BUBBLE_GROUP(Step2)
-			[&pack](const Step2& in, unsigned) -> Step3 {
-				return Process3(pack, in);
-			},
-			BUBBLE_GROUP(Step3)
-			[&pack, &hit, keys, out](const Step3& in, unsigned i) {
-				if (LIKELY(in.line != nullptr) && Equal(keys[i], in.line, pack.key_len)) {
-					hit++;
-					out[i] = in.line + pack.key_len;
-				} else {
-					out[i] = nullptr;
-				}
+	for (unsigned i = 0; i < batch; i += WINDOW_SIZE) {
+		auto m = std::min(WINDOW_SIZE, batch-i);
+		for (unsigned j = 0; j < m; j++) {
+			state[j].s1 = Process1(pack, keys[i+j]);
+		}
+		for (unsigned j = 0; j < m; j++) {
+			state[j].s2 = Process2(state[j].s1);
+		}
+		for (unsigned j = 0; j < m; j++) {
+			state[j].s3 = Process3(pack, state[j].s2);
+		}
+		for (unsigned j = 0; j < m; j++) {
+			auto& s = state[j].s3;
+			if (LIKELY(s.line != nullptr) && Equal(keys[i+j], s.line, pack.key_len)) {
+				hit++;
+				out[i+j] = s.line + pack.key_len;
+			} else {
+				out[i+j] = nullptr;
 			}
-	);
+		}
+	}
 	return hit;
-#undef BUBBLE_GROUP
 }
 
 unsigned BatchFetch(const PackView& pack, const uint8_t* __restrict__ dft_val, unsigned batch,
@@ -170,51 +178,49 @@ unsigned BatchFetch(const PackView& pack, const uint8_t* __restrict__ dft_val, u
 	if (pack.type != Type::KV_INLINE) {
 		return 0;
 	}
+	union {
+		Step1 s1;
+		Step2 s2;
+		Step3 s3;
+	} state[WINDOW_SIZE];
+	unsigned hit = 0;
+	for (unsigned i = 0; i < batch; i += WINDOW_SIZE) {
+		auto m = std::min(WINDOW_SIZE, batch - i);
+		for (unsigned j = 0; j < m; j++) {
+			auto key = keys + (i+j) * pack.key_len;
+			state[j].s1 = Process1(pack, key);
+		}
+		for (unsigned j = 0; j < m; j++) {
+			state[j].s2 = Process2(state[j].s1);
+		}
+		for (unsigned j = 0; j < m; j++) {
+			state[j].s3 = Process3(pack, state[j].s2);
+		}
+		for (unsigned j = 0; j < m; j++) {
+			auto& s = state[j].s3;
+			auto key = keys + (i+j) * pack.key_len;
+			auto out = data + (i+j) * pack.val_len;
+			auto src = s.line + pack.key_len;
+			if (LIKELY(s.line != nullptr) && Equal(key, s.line, pack.key_len)) {
+				hit++;
+			} else if (dft_val != nullptr) {
+				src = dft_val;
+			} else if (miss != nullptr) {
+				*miss++ = i;
+			} else {
+				continue;
+			}
+			memcpy(out, src, pack.val_len);
+		}
+	}
+	return hit;
+}
 
-#if PIPELINE_LEVEL >= 4
-#define BUBBLE_GROUP(type) BUBBLE(type), BUBBLE(type), BUBBLE(type),
-#elif PIPELINE_LEVEL >= 3
-#define BUBBLE_GROUP(type) BUBBLE(type), BUBBLE(type),
-#elif PIPELINE_LEVEL >= 2
-#define BUBBLE_GROUP(type) BUBBLE(type),
-#else
-#define BUBBLE_GROUP(type)
+#ifndef PIPELINE_LEVEL
+#define PIPELINE_LEVEL 3
 #endif
 
-	unsigned hit = 0;
-	Pipeline(batch,
-			[&pack, keys](unsigned i) -> Step1 {
-				auto key = keys+i*pack.key_len;
-				return Process1(pack, key);
-			},
-			BUBBLE_GROUP(Step1)
-			[](const Step1& in, unsigned) -> Step2 {
-				return Process2(in);
-			},
-			BUBBLE_GROUP(Step2)
-			[&pack](const Step2& in, unsigned) -> Step3 {
-				return Process3(pack, in, true);
-			},
-			BUBBLE_GROUP(Step3)
-			[&pack, &hit, keys, data, dft_val, &miss](const Step3& in, unsigned i) {
-				auto key = keys + i*pack.key_len;
-				auto out = data + i*pack.val_len;
-				auto src = in.line + pack.key_len;
-				if (LIKELY(in.line != nullptr) && Equal(key, in.line, pack.key_len)) {
-					hit++;
-				} else if (dft_val != nullptr) {
-					src = dft_val;
-				} else if (miss != nullptr) {
-					*miss++ = i;
-				} else {
-					return;
-				}
-				memcpy(out, src, pack.val_len);
-			}
-	);
-	return hit;
-#undef BUBBLE_GROUP
-}
+#define BUBBLE(type) [](const type& in, size_t) -> type { return in; }
 
 template <typename T>
 struct Relay {
@@ -300,7 +306,7 @@ unsigned BatchFetch(const PackView& base, const PackView& patch, const uint8_t* 
 		return 0;
 	}
 
-#if PIPELINE_LEVEL >= 3
+#if PIPELINE_LEVEL >= 4
 #define BUBBLE_GROUP(type) BUBBLE(type),
 #else
 #define BUBBLE_GROUP(type)
@@ -369,106 +375,89 @@ unsigned BatchFetch(const PackView& base, const PackView& patch, const uint8_t* 
 #undef BUBBLE_GROUP
 }
 
-static constexpr unsigned PIPELINE_BUFFER_SIZE = 16;	//bigger than depth of pipeline
-static_assert((PIPELINE_BUFFER_SIZE & (PIPELINE_BUFFER_SIZE-1)) == 0, "");
-
-void BatchFindPos(const PackView& pack, size_t batch, const std::function<const uint8_t*(uint8_t*)>& reader,
+void BatchFindPos(const PackView& pack, size_t batch, const std::function<void(uint8_t*)>& reader,
 				const std::function<void(uint64_t)>& output, const uint8_t* bitmap) {
 	if (pack.type == Type::INDEX_ONLY) return;
-	auto buf = std::make_unique<uint8_t[]>(PIPELINE_BUFFER_SIZE*pack.key_len);
-	typedef const uint8_t* Pointer;
-	auto cache = std::make_unique<Pointer[]>(PIPELINE_BUFFER_SIZE);
-	struct Step3X {
-		uint64_t pos;
-		const uint8_t* line;
-	};
+	auto buf = std::make_unique<uint8_t[]>(WINDOW_SIZE*pack.key_len);
 
-#if PIPELINE_LEVEL >= 4
-#define BUBBLE_GROUP(type) BUBBLE(type), BUBBLE(type),
-#elif PIPELINE_LEVEL >= 3
-#define BUBBLE_GROUP(type) BUBBLE(type),
-#else
-#define BUBBLE_GROUP(type)
-#endif
+	union {
+		Step1 s1;
+		Step2 s2;
+		struct {
+			uint64_t pos;
+			const uint8_t* line;
+		} s3;
+	} state[WINDOW_SIZE];
 
-	Pipeline(batch,
-			[&pack, &cache, &buf, &reader](size_t i) -> Step1 {
-				auto j = i & (PIPELINE_BUFFER_SIZE-1);
-				cache[j] = reader(buf.get() + j*pack.key_len);
-				return Process1(pack, cache[j], pack.key_len);
-			},
-			BUBBLE_GROUP(Step1)
-			[](const Step1& in, size_t) -> Step2 {
-				return Process2(in);
-			},
-			BUBBLE_GROUP(Step2)
-			[&pack, bitmap](const Step2& in, size_t) -> Step3X {
-				const auto pos = CalcPos(in);
-				assert(pos < pack.item);
-				auto line = pack.content + pos*pack.line_size;
-				PrefetchForNext(line);
-				if (bitmap != nullptr) {
-					PrefetchBit(bitmap,pos);
-				}
-				return {pos, line};
-			},
-			BUBBLE_GROUP(Step3X)
-			[&pack, &cache, &output](const Step3X& in, size_t i) {
-				if (Equal(cache[i&(PIPELINE_BUFFER_SIZE-1)], in.line, pack.key_len)) {
-					output(in.pos);
-				} else {
-					output(UINT64_MAX);
-				}
+	for (size_t i = 0; i < batch; i += WINDOW_SIZE) {
+		auto m = std::min(static_cast<size_t>(WINDOW_SIZE), batch-i);
+		for (unsigned j = 0; j < m; j++) {
+			auto key = buf.get() + j * pack.key_len;
+			reader(key);
+			state[j].s1 = Process1(pack, key);
+		}
+		for (unsigned j = 0; j < m; j++) {
+			state[j].s2 = Process2(state[j].s1);
+		}
+		for (unsigned j = 0; j < m; j++) {
+			auto pos = CalcPos(state[j].s2);
+			assert(pos < pack.item);
+			auto line = pack.content + pos*pack.line_size;
+			PrefetchForNext(line);
+			if (bitmap != nullptr) {
+				PrefetchBit(bitmap,pos);
 			}
-	);
-#undef BUBBLE_GROUP
+			state[j].s3 = {pos, line};
+		}
+		for (unsigned j = 0; j < m; j++) {
+			auto key = buf.get() + j * pack.key_len;
+			auto& s = state[j].s3;
+			if (Equal(key, s.line, pack.key_len)) {
+				output(s.pos);
+			} else {
+				output(UINT64_MAX);
+			}
+		}
+	}
 }
 
-void BatchDataMapping(const PackView& index, uint8_t* space, size_t batch,
-				const std::function<const uint8_t*(uint8_t*)>& reader) {
-	auto buf = std::make_unique<uint8_t[]>(PIPELINE_BUFFER_SIZE*index.line_size);
-	typedef const uint8_t* Pointer;
-	auto cache = std::make_unique<Pointer[]>(PIPELINE_BUFFER_SIZE);
-	struct Step3X {
-		uint8_t* line;
-	};
+void BatchDataMapping(const PackView& index, uint8_t* space, size_t batch, const std::function<void(uint8_t*)>& reader) {
+	auto buf = std::make_unique<uint8_t[]>(WINDOW_SIZE*index.line_size);
 
-#if PIPELINE_LEVEL >= 5
-#define BUBBLE_GROUP(type) BUBBLE(type), BUBBLE(type),
-#elif PIPELINE_LEVEL >= 3
-#define BUBBLE_GROUP(type) BUBBLE(type),
-#else
-#define BUBBLE_GROUP(type)
-#endif
+	union {
+		Step1 s1;
+		Step2 s2;
+		struct {
+			uint8_t* line;
+		} s3;
+	} state[WINDOW_SIZE];
 
-	Pipeline(batch,
-			[&index, &cache, &buf, &reader](size_t i) -> Step1 {
-				auto j = i & (PIPELINE_BUFFER_SIZE-1);
-				cache[j] = reader(buf.get() + j*index.line_size);
-				return Process1(index, cache[j], index.key_len);
-			},
-			BUBBLE_GROUP(Step1)
-			[](const Step1& in, size_t) -> Step2 {
-				return Process2(in);
-			},
-			BUBBLE_GROUP(Step2)
-			[space, &index](const Step2& in, size_t) -> Step3X {
-				Step3X out;
-				out.line = space + CalcPos(in)*index.line_size;
-				PrefetchForWrite(out.line);
-				auto off = (uintptr_t)out.line & (CACHE_BLOCK_SIZE-1);
-				auto blk = (const void*)(((uintptr_t)out.line & ~(uintptr_t)(CACHE_BLOCK_SIZE-1)) + CACHE_BLOCK_SIZE);
-				if (off + index.line_size > CACHE_BLOCK_SIZE) {
-					PrefetchForWrite(blk);
-				}
-				return out;
-			},
-			BUBBLE_GROUP(Step3X)
-			[&cache, &index](const Step3X& in, size_t i) {
-				memcpy(in.line, cache[i&(PIPELINE_BUFFER_SIZE-1)], index.line_size);
+	for (size_t i = 0; i < batch; i += WINDOW_SIZE) {
+		auto m = std::min(static_cast<size_t>(WINDOW_SIZE), batch - i);
+		for (unsigned j = 0; j < m; j++) {
+			auto line = buf.get() + j * index.line_size;
+			reader(line);
+			state[j].s1 = Process1(index, line);
+		}
+		for (unsigned j = 0; j < m; j++) {
+			state[j].s2 = Process2(state[j].s1);
+		}
+		for (unsigned j = 0; j < m; j++) {
+			auto line = space + CalcPos(state[j].s2)*index.line_size;
+			PrefetchForWrite(line);
+			auto off = (uintptr_t)line & (CACHE_BLOCK_SIZE-1);
+			auto blk = (const void*)(((uintptr_t)line & ~(uintptr_t)(CACHE_BLOCK_SIZE-1)) + CACHE_BLOCK_SIZE);
+			if (off + index.line_size > CACHE_BLOCK_SIZE) {
+				PrefetchForWrite(blk);
 			}
-	);
-#undef BUBBLE_GROUP
+			state[j].s3.line = line;
+		}
+		for (unsigned j = 0; j < m; j++) {
+			auto line = buf.get() + j * index.line_size;
+			auto& s = state[j].s3;
+			memcpy(s.line, line, index.line_size);
+		}
+	}
 }
 
 } //shd

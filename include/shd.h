@@ -85,6 +85,8 @@ public:
 	size_t item() const noexcept { return m_item; }
 
 	size_t locate(const uint8_t* key, uint8_t key_len) const noexcept;
+	void batch_locate(unsigned batch, const uint8_t* __restrict__ keys,
+					  uint8_t key_len, uint64_t* __restrict__ out);
 
 	//KEY_SET, KV_INLINE or KV_SEPARATED
 	//key is found when output slice is valid

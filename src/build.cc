@@ -869,12 +869,11 @@ static bool FillKeyValue(const PackView& index, IDataReader& reader, uint8_t* sp
 	if (index.line_size <= DOUBLE_COPY_LINE_SIZE_LIMIT) {
 		try {
 			BatchDataMapping(index, space, total,
-					[&reader, &fill_line, &index](uint8_t* buf)->const uint8_t*{
+					[&reader, &fill_line, &index](uint8_t* buf) {
 						auto rec = reader.read(index.val_len==0);
 						if (rec.key.len != index.key_len || !fill_line(rec, buf)) {
 							throw BuildException();
 						}
-						return buf;
 					});
 		} catch (const BuildException&) {
 			return false;
@@ -979,12 +978,11 @@ static BuildStatus FillSeparatedKeyValue(const PackView& index, const DataReader
 		if (index.line_size <= DOUBLE_COPY_LINE_SIZE_LIMIT) {
 			try {
 				BatchDataMapping(index, space.addr(), cnt,
-								 [&reader, &fill_line, key_len](uint8_t* buf)->const uint8_t*{
+								 [&reader, &fill_line, key_len](uint8_t* buf) {
 									 auto rec = reader->read(false);
 									 if (rec.key.len != key_len || !fill_line(rec, buf)) {
 										 throw BuildException();
 									 }
-									 return buf;
 								 });
 			} catch (const BuildException&) {
 				return offset > MAX_OFFSET? BUILD_STATUS_FAIL_TO_OUTPUT : BUILD_STATUS_BAD_INPUT;
@@ -1157,13 +1155,12 @@ static DataReaders PrepareForRebuild(const PackView& base, const DataReaders& in
 		reader->reset();
 		try {
 			BatchFindPos(base, reader->total(),
-						 [reader, &base](uint8_t *buf) -> const uint8_t * {
+						 [reader, &base](uint8_t *buf)  {
 							 auto key = reader->read(true).key;
 							 if (key.ptr == nullptr || key.len != base.key_len) {
 								 throw BuildException();
 							 }
 							 Assign(buf, key.ptr, base.key_len);
-							 return buf;
 						 },
 						 [&shard, &base, &dirty](uint64_t pos) {
 							 if (pos < base.item) {
@@ -1200,13 +1197,12 @@ static DataReaders PrepareForRebuild(const PackView& base, const DataReaders& in
 			std::vector<size_t> temp(shards.size(), 0);
 			try {
 				BatchFindPos(base, reader->total(),
-							 [reader, &base](uint8_t *buf) -> const uint8_t * {
+							 [reader, &base](uint8_t *buf){
 								 auto key = reader->read(true).key;
 								 if (key.ptr == nullptr || key.len != base.key_len) {
 									 throw BuildException();
 								 }
 								 Assign(buf, key.ptr, base.key_len);
-								 return buf;
 							 },
 							 [&shards, &temp, &base, &dirty](uint64_t pos) {
 								 if (pos < base.item) {

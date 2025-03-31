@@ -247,12 +247,13 @@ extern uint64_t CalcPos(const PackView& index, const uint8_t* key, uint8_t key_l
 static constexpr unsigned MINI_BATCH = 32;
 static constexpr unsigned DOUBLE_COPY_LINE_SIZE_LIMIT = 160;
 
-void BatchFindPos(const PackView& pack, size_t batch, const std::function<const uint8_t*(uint8_t*)>& reader,
-				  const std::function<void(uint64_t)>& output, const uint8_t* bitmap);
-void BatchDataMapping(const PackView& index, uint8_t* space, size_t batch,
-					  const std::function<const uint8_t*(uint8_t*)>& reader);
+extern void BatchDataMapping(const PackView& index, uint8_t* space, size_t batch,
+							 const std::function<void(uint8_t*)>& reader);
+extern void BatchFindPos(const PackView& pack, size_t batch, const std::function<void(uint8_t*)>& reader,
+						 const std::function<void(uint64_t)>& output, const uint8_t* bitmap);
 
-
+extern void BatchLocate(const PackView& index, unsigned batch, const uint8_t* __restrict__ keys,
+						uint8_t key_len, uint64_t* __restrict__ out);
 extern unsigned BatchSearch(const PackView& pack, unsigned batch, const uint8_t* const keys[], const uint8_t* out[]);
 extern unsigned BatchFetch(const PackView& pack, const uint8_t* __restrict__ dft_val, unsigned batch,
 						   const uint8_t* __restrict__ keys, uint8_t* __restrict__ data, unsigned* __restrict__ miss);
