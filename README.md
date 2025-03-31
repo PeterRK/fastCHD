@@ -8,7 +8,7 @@ This algorithm introduces an improvement on [CHD](http://cmph.sourceforge.net/ch
 Because it's more resonable to use skew hash instead of uniform hash in first level hashing, SHD can achieve higher density than CHD with almost the same performance.
 
 ![](images/build.png)
-Building dictionary with one billion data costs tens of secoends, a little slower than fastCHD (can be found in chd branch).
+Building dictionary with one billion data costs a dozen of seconds, a little faster than fastCHD (can be found in chd branch).
 
 ![](images/throughput.png)
 It can provide sub-billion level QPS on single machine, just like fastCHD (can be found in chd branch).

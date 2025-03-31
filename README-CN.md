@@ -8,7 +8,7 @@
 在一级Hash环节，倾斜Hash比CHD使用的均匀Hash更合理，因此SHD算法可以以更高的密度达到和CHD算法接近的性能。
 
 ![](images/build.png)
-十亿数据的构建耗时在数十秒水平，稍逊于fastCHD（见本项目的chd分支）。
+十亿数据的构建耗时在十几秒水平，稍快于fastCHD（见本项目的chd分支）。
 
 ![](images/throughput.png)
 和fastCHD（见本项目的chd分支）一样，可提供单机亿级读取QPS。
