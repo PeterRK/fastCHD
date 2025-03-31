@@ -161,6 +161,16 @@ size_t PerfectHashtable::locate(const uint8_t* key, uint8_t key_len) const noexc
 	return CalcPos(*index, key, key_len);
 }
 
+void PerfectHashtable::batch_locate(unsigned batch, const uint8_t* __restrict__ keys,
+									uint8_t key_len, uint64_t* __restrict__ out) {
+	auto index = (const PackView*)m_view.get();
+	if (UNLIKELY(index == nullptr || keys == nullptr || key_len == 0
+		|| (index->type != INDEX_ONLY && key_len != index->key_len))) {
+		return;
+	}
+	return BatchLocate(*index, batch, keys, key_len, out);
+}
+
 Slice SeparatedValue(const uint8_t* pt, const uint8_t* end) {
 	static_assert(MAX_VALUE_LEN_BIT % 7U == 0, "MAX_VALUE_LEN_BIT should be 7x");
 
