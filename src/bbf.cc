@@ -19,6 +19,7 @@
 #include <cstring>
 #include "common.h"
 #include "bbf.h"
+#include "pipeline.h"
 
 namespace bbf {
 
@@ -92,47 +93,19 @@ BloomFilter::BloomFilter(size_t size, const std::function<bool(uint8_t*)>& load)
 	m_mem = std::move(mem);
 }
 
-
-template <typename P1, typename P2>
-static FORCE_INLINE void BatchRun(size_t n, const P1& p1, const P2& p2) {
-	static constexpr unsigned m = 16;
-	Step s[m];
-	if (n <= m) {
-		for (unsigned i = 0; i < n; i++) {
-			p1(s[i]);
-		}
-		for (unsigned i = 0; i < n; i++) {
-			p2(s[i]);
-		}
-		return;
-	}
-	for (unsigned i = 0; i < m; i++) {
-		p1(s[i]);
-	}
-	for (unsigned j = m; j < n; j++) {
-		auto i = j % m;
-		p2(s[i]);
-		p1(s[i]);
-	}
-	for (unsigned j = n-m; j < n; j++) {
-		auto i = j % m;
-		p2(s[i]);
-	}
-}
-
 unsigned BloomFilter::batch_test(unsigned batch, unsigned key_len,
 								 const uint8_t* __restrict__ keys, bool* __restrict__ out) const noexcept {
 	auto space = reinterpret_cast<const uint64_t*>(m_mem.addr()+sizeof(uint64_t));
 	unsigned hit = 0;
-	BatchRun(batch, 
-			[this, space, &keys, key_len](Step& s) {
-				s = Calc(m_block, keys, key_len);
-				keys += key_len;
+	Pipeline<15>(batch,
+			[this, space, &keys, key_len](unsigned i)->Step {
+				auto s = Calc(m_block, keys+i*key_len, key_len);
 				PrefetchForNext(&space[s.blk]);
+				return s;
 			},
-			[space, &out, &hit](Step& s) {
-				*out = (space[s.blk] & s.mask) == s.mask;
-				hit += *out++;
+			[space, &out, &hit](Step& s, unsigned i) {
+				out[i] = (space[s.blk] & s.mask) == s.mask;
+				hit += out[i];
 			}
 	);
 	return hit;
@@ -141,13 +114,13 @@ unsigned BloomFilter::batch_test(unsigned batch, unsigned key_len,
 void BloomFilter::batch_set(unsigned batch, unsigned key_len, const uint8_t* keys) const noexcept {
 	auto space = reinterpret_cast<uint64_t*>(m_mem.addr()+sizeof(uint64_t));
 	auto& item = *reinterpret_cast<uint64_t*>(m_mem.addr());
-	BatchRun(batch, 
-			[this, space, &keys, key_len](Step& s) {
-				s = Calc(m_block, keys, key_len);
-				keys += key_len;
+	Pipeline<15>(batch,
+			[this, space, &keys, key_len](unsigned i)->Step {
+				auto s = Calc(m_block, keys+i*key_len, key_len);
 				PrefetchForNext(&space[s.blk]);
+				return s;
 			},
-			[space, &item](Step& s) {
+			[space, &item](Step& s, unsigned) {
 				item += (space[s.blk] & s.mask) != s.mask;
 				space[s.blk] |= s.mask;
 			}

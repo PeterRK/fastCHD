@@ -89,6 +89,35 @@ void GenCode(unsigned depth) {
 
 #include <type_traits>
 
+template <unsigned Bubble, typename P1, typename P2>
+static inline __attribute__((always_inline)) void
+Pipeline(size_t n, const P1& p1, const P2& p2) {
+	using S1 = std::result_of_t<P1(size_t)>;
+	constexpr unsigned M = Bubble + 1;
+	if (n < M*1) {
+		union {
+			S1 s1;
+		} ctx[M*1-1];
+		for (size_t i = 0; i < n; i++) ctx[i].s1 = p1(i);
+		for (size_t i = 0; i < n; i++) p2(ctx[i].s1, i);
+		return;
+	}
+	S1 s1[M];
+	for (unsigned j = 0; j < M; j++) {
+		s1[j] = p1(M*0+j);
+	}
+	unsigned k = 0;
+	for (size_t i = M*1; i < n; i++) {
+		p2(s1[k], i-M*1);
+		s1[k] = p1(i);
+		if (++k >= M) k = 0;
+	}
+	for (unsigned j = 0; j < M; j++) {
+		p2(s1[k], n-M*1+j);
+		if (++k >= M) k = 0;
+	}
+}
+
 template <unsigned Bubble, typename P1, typename P2, typename P3>
 static inline __attribute__((always_inline)) void
 Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3) {
