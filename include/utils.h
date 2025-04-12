@@ -185,13 +185,8 @@ private:
 	Word m_tip = 0;
 	unsigned m_sft = 0;
 #else
-	union {
-		struct {
-			uint8_t m_sft : 7;
-			uint8_t m_ab : 1;
-		};
-		uint8_t m_ = 0;  //just for initializing
-	};
+	uint8_t m_sft = 0;
+	bool m_ab = false;
 #endif
 	using DoubleWord = typename std::conditional<std::is_same<Word,uint8_t>::value, uint16_t,
 		typename std::conditional<std::is_same<Word,uint16_t>::value, uint32_t,
@@ -208,7 +203,7 @@ protected:
 #ifdef SHD_PACK_SIZE
 		m_tip = 0;
 #else
-		m_ab = 0;
+		m_ab = false;
 #endif
 		if (n == 0) {
 			return;
@@ -238,7 +233,7 @@ protected:
 		}
 #else
 		if (r <= m) {
-			m_ab = 1;
+			m_ab = true;
 		}
 #endif
 #endif
