@@ -254,8 +254,7 @@ public:
 			t = m;
 		}
 #endif
-		t = (m_fac * (DoubleWord)m + t) >> BITWIDTH;
-		return t >> m_sft;
+		return (m_fac * (DoubleWord)m + t) >> (BITWIDTH + m_sft);
 #endif
 	}
 
@@ -263,16 +262,7 @@ public:
 #ifdef DISABLE_SOFT_DIVIDE
 		return m % m_val;
 #else
-#ifdef SHD_PACK_SIZE
-		auto t = m_tip;
-#else
-		auto t = m_fac;
-		if (m_ab) {
-			t = m;
-		}
-#endif
-		t = (m_fac * (DoubleWord)m + t) >> BITWIDTH;
-		return m - m_val * (t >> m_sft);
+		return m - m_val * div(m);
 #endif
 	}
 };
