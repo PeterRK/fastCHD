@@ -23,6 +23,7 @@ set(CMAKE_CXX_STANDARD 17)
 
 set(CMAKE_SKIP_BUILD_RPATH TRUE)
 set(CMAKE_EXE_LINKER_FLAGS -Wl,--rpath=.)
+enable_testing()
 
 option(MODERN_CPU_ONLY "build for modern CPU only" ON)
 
@@ -60,6 +61,7 @@ file(GLOB test_src
 
 add_executable(shd-test ${test_src})
 target_link_libraries(shd-test pthread gtest shd)
+add_test(NAME shd-test COMMAND shd-test)
 
 add_executable(bench-billion benchmark/billion.cc)
 target_link_libraries(bench-billion pthread gflags shd)

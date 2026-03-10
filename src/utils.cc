@@ -28,6 +28,40 @@
 
 namespace shd {
 
+static bool PReadAll(int fd, void* buf, size_t n, off_t off) noexcept {
+	auto data = static_cast<uint8_t*>(buf);
+	size_t done = 0;
+	while (done < n) {
+		auto m = pread(fd, data + done, n - done, off + done);
+		if (m > 0) {
+			done += m;
+			continue;
+		}
+		if (m < 0 && errno == EINTR) {
+			continue;
+		}
+		return false;
+	}
+	return true;
+}
+
+static bool WriteAll(int fd, const void* buf, size_t n) noexcept {
+	auto data = static_cast<const uint8_t*>(buf);
+	size_t done = 0;
+	while (done < n) {
+		auto m = ::write(fd, data + done, n - done);
+		if (m > 0) {
+			done += m;
+			continue;
+		}
+		if (m < 0 && errno == EINTR) {
+			continue;
+		}
+		return false;
+	}
+	return true;
+}
+
 struct DefaultLogger : public Logger {
 	void printf(const char* format, va_list args) override;
 	static DefaultLogger instance;
@@ -108,14 +142,14 @@ static MemBlock LoadAll(int fd) noexcept {
 	while (remain > block) {
 		auto next = off + block;
 		readahead(fd, next, block);
-		if (pread(fd, data, block, off) != block) {
+		if (!PReadAll(fd, data, block, off)) {
 			return {};
 		}
 		off = next;
 		data += block;
 		remain -= block;
 	}
-	if (pread(fd, data, remain, off) != remain) {
+	if (!PReadAll(fd, data, remain, off)) {
 		return {};
 	}
 	return out;
@@ -191,15 +225,15 @@ bool FileWriter::operator!() const noexcept {
 bool FileWriter::_write(const void* data, size_t n) noexcept {
 	constexpr size_t block = 16*1024*1024;
 	while (n > block) {
-		if (::write(m_fd, data, block) != block) {
+		if (!WriteAll(m_fd, data, block)) {
 			::close(m_fd);
 			m_fd = -1;
 			return false;
 		}
 		n -= block;
-		data = (uint8_t*)data + block;
+		data = static_cast<const uint8_t*>(data) + block;
 	}
-	if (::write(m_fd, data, n) != n) {
+	if (!WriteAll(m_fd, data, n)) {
 		::close(m_fd);
 		m_fd = -1;
 		return false;
