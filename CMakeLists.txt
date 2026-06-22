@@ -16,52 +16,62 @@
 # along with the This Library; if not, see <https:#www.gnu.org/licenses/>.
 #===============================================================================
 
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.15)
 project(fastSHD)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(CMAKE_SKIP_BUILD_RPATH TRUE)
-set(CMAKE_EXE_LINKER_FLAGS -Wl,--rpath=.)
 enable_testing()
+find_package(Threads REQUIRED)
 
 option(MODERN_CPU_ONLY "build for modern CPU only" ON)
+option(SHD_BUILD_TESTS "build tests" ON)
+option(SHD_BUILD_BENCHMARKS "build benchmarks" OFF)
 
-set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG -Wall")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-unroll-loops -fno-stack-protector")
-if (CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
-    if (MODERN_CPU_ONLY)
-        message("NOTICE: build for modern CPU not older than skylake")
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=skylake")
-        #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mpopcnt")
-    endif()
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    add_compile_options(-fno-unroll-loops)
+endif()
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    add_compile_options($<$<CONFIG:Release>:-O2>)
+elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
+    add_compile_options($<$<CONFIG:Release>:-O3>)
+endif()
+if (MODERN_CPU_ONLY AND NOT WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    message(STATUS "fastSHD: tuning x86-64 build for Skylake or newer")
+    add_compile_options(-march=skylake)
 endif()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --param case-values-threshold=3")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --param max-inline-insns-size=64")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --param large-function-insns=5000")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --param large-function-growth=200")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --param large-unit-insns=30000")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --param inline-unit-growth=100")
+    # Keep only the switch heuristic used by the hot lookup path.
+    add_compile_options(--param=case-values-threshold=3)
 endif()
 
-include_directories(${CMAKE_SOURCE_DIR}/include)
+# Include paths are attached to targets below.
 
-file(GLOB source
-    src/*.cc
-)
+file(GLOB source CONFIGURE_DEPENDS src/*.cc)
 
 add_library(shd SHARED ${source})
-target_link_libraries(shd pthread)
+target_compile_features(shd PUBLIC cxx_std_17)
+target_include_directories(shd PUBLIC ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(shd PRIVATE Threads::Threads)
+target_compile_definitions(shd PRIVATE SHD_BUILDING_SHARED PUBLIC SHD_USING_SHARED)
+target_compile_definitions(shd PRIVATE $<$<CONFIG:Release>:NDEBUG>)
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    target_compile_options(shd PRIVATE -fvisibility=hidden)
+endif()
 
-file(GLOB test_src
-    test/*.cc
-)
+if (SHD_BUILD_TESTS)
+    find_package(GTest REQUIRED)
+    file(GLOB test_src CONFIGURE_DEPENDS test/*.cc)
+    add_executable(shd-test ${test_src})
+    target_link_libraries(shd-test PRIVATE Threads::Threads GTest::gtest shd)
+    add_test(NAME shd-test COMMAND shd-test)
+endif()
 
-add_executable(shd-test ${test_src})
-target_link_libraries(shd-test pthread gtest shd)
-add_test(NAME shd-test COMMAND shd-test)
-
-add_executable(bench-billion benchmark/billion.cc)
-target_link_libraries(bench-billion pthread gflags shd)
+if (SHD_BUILD_BENCHMARKS)
+    find_package(gflags CONFIG REQUIRED)
+    add_executable(bench-billion benchmark/billion.cc)
+    target_link_libraries(bench-billion PRIVATE Threads::Threads gflags::gflags shd)
+endif()

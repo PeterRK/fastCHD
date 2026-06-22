@@ -24,7 +24,6 @@
 #include <vector>
 #include <string>
 #include <chrono>
-#include <sys/sysinfo.h>
 #include <shd.h>
 #include <gflags/gflags.h>
 #include "benchmark.h"
@@ -126,8 +125,8 @@ static int BenchFetch() {
 int main(int argc, char* argv[]) {
 	google::ParseCommandLineFlags(&argc, &argv, true);
 
-	auto cpus = get_nprocs();
-	if (cpus <= 0) cpus = 1;
+	auto cpus = std::thread::hardware_concurrency();
+	if (cpus == 0) cpus = 1;
 	if (FLAGS_thread == 0 || FLAGS_thread > cpus) {
 		FLAGS_thread = cpus;
 	}

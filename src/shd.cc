@@ -16,8 +16,6 @@
 // along with the This Library; if not, see <https://www.gnu.org/licenses/>.
 //==============================================================================
 
-#include <fcntl.h>
-#include <unistd.h>
 #include "internal.h"
 #include "shd.h"
 

@@ -16,63 +16,274 @@
 // along with the This Library; if not, see <https://www.gnu.org/licenses/>.
 //==============================================================================
 
-#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+
+#include <utils.h>
+
+
+#if defined(_WIN32)
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
 #include <fcntl.h>
-#include <unistd.h>
+#include <io.h>
+#include <sys/stat.h>
+
+#include <algorithm>
+#include <limits>
+
+#else
+
+#include <algorithm>
+#include <cerrno>
+#include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
-#include <utils.h>
+#include <unistd.h>
+
+#endif
+
+namespace {
+
+static constexpr size_t BLOCK_SIZE = 16U * 1024U * 1024U;
+
+int OpenRead(const char* path) noexcept {
+#if defined(_WIN32)
+	return _open(path, _O_RDONLY | _O_BINARY);
+#else
+	return open(path, O_RDONLY);
+#endif
+}
+
+int OpenWrite(const char* path) noexcept {
+#if defined(_WIN32)
+	return _open(path, _O_CREAT | _O_TRUNC | _O_WRONLY | _O_BINARY,
+				 _S_IREAD | _S_IWRITE);
+#else
+	return open(path, O_CREAT | O_TRUNC | O_WRONLY, 0644);
+#endif
+}
+
+void Close(int fd) noexcept {
+	if (fd < 0) {
+		return;
+	}
+#if defined(_WIN32)
+	_close(fd);
+#else
+	close(fd);
+#endif
+}
+
+bool GetFileSize(int fd, size_t& size) noexcept {
+#if defined(_WIN32)
+	struct _stat64 stat{};
+	if (_fstat64(fd, &stat) != 0 || stat.st_size <= 0 ||
+		static_cast<unsigned long long>(stat.st_size) > std::numeric_limits<size_t>::max()) {
+		return false;
+	}
+	size = static_cast<size_t>(stat.st_size);
+	return true;
+#else
+	struct stat stat{};
+	if (fstat(fd, &stat) != 0 || stat.st_size <= 0) {
+		return false;
+	}
+	size = static_cast<size_t>(stat.st_size);
+	return static_cast<off_t>(size) == stat.st_size;
+#endif
+}
+
+bool ReadAll(int fd, void* buf, size_t size) noexcept {
+	auto data = static_cast<uint8_t*>(buf);
+	size_t done = 0;
+	while (done < size) {
+		const auto chunk = static_cast<unsigned>(std::min(size - done, BLOCK_SIZE));
+#if defined(_WIN32)
+		const auto read = _read(fd, data + done, chunk);
+		if (read <= 0) {
+			return false;
+		}
+		done += static_cast<size_t>(read);
+#else
+		const auto offset = static_cast<off_t>(done);
+#if defined(__linux__)
+		readahead(fd, offset + static_cast<off_t>(chunk), chunk);
+#endif
+		const auto read = pread(fd, data + done, chunk, offset);
+		if (read > 0) {
+			done += static_cast<size_t>(read);
+			continue;
+		}
+		if (read < 0 && errno == EINTR) {
+			continue;
+		}
+		return false;
+#endif
+	}
+	return true;
+}
+
+bool WriteAll(int fd, const void* buf, size_t size) noexcept {
+	auto data = static_cast<const uint8_t*>(buf);
+	size_t done = 0;
+	while (done < size) {
+		const auto chunk = static_cast<unsigned>(std::min(size - done, BLOCK_SIZE));
+#if defined(_WIN32)
+		const auto written = _write(fd, data + done, chunk);
+#else
+		const auto written = write(fd, data + done, chunk);
+#endif
+		if (written > 0) {
+			done += static_cast<size_t>(written);
+			continue;
+		}
+#if !defined(_WIN32)
+		if (written < 0 && errno == EINTR) {
+			continue;
+		}
+#endif
+		return false;
+	}
+	return true;
+}
+
+#if !defined(_WIN32)
+static size_t RoundUp(size_t size) noexcept {
+	constexpr size_t mask = 0x1fffff;
+	return (size + mask) & ~mask;
+}
+#endif
+
+void* AllocateLarge(size_t size) noexcept {
+#if defined(_WIN32)
+	return VirtualAlloc(nullptr, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+#else
+	const auto rounded = RoundUp(size);
+	void* addr = MAP_FAILED;
+#if defined(MAP_ANONYMOUS)
+	constexpr int anonymous = MAP_ANONYMOUS;
+#else
+	constexpr int anonymous = MAP_ANON;
+#endif
+#if defined(__linux__) && defined(MAP_HUGETLB)
+	addr = mmap(nullptr, rounded, PROT_READ | PROT_WRITE,
+				MAP_PRIVATE | anonymous | MAP_HUGETLB, -1, 0);
+#endif
+	if (addr == MAP_FAILED) {
+		addr = mmap(nullptr, rounded, PROT_READ | PROT_WRITE,
+					MAP_PRIVATE | anonymous, -1, 0);
+	}
+	if (addr == MAP_FAILED) {
+		return nullptr;
+	}
+#if defined(__linux__) && defined(MADV_DONTDUMP)
+	madvise(addr, rounded, MADV_DONTDUMP);
+#endif
+	return addr;
+#endif
+}
+
+void FreeLarge(void* addr, size_t size) noexcept {
+	if (addr == nullptr) {
+		return;
+	}
+#if defined(_WIN32)
+	(void)size;
+	VirtualFree(addr, 0, MEM_RELEASE);
+#else
+	munmap(addr, RoundUp(size));
+#endif
+}
+
+bool MapReadOnly(const char* path, bool fetch, bool occupy,
+				uint8_t*& addr, size_t& size) noexcept {
+	const int fd = OpenRead(path);
+	if (fd < 0 || !GetFileSize(fd, size)) {
+		Close(fd);
+		return false;
+	}
+
+#if defined(_WIN32)
+	(void)fetch;
+	(void)occupy;
+	const auto file = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
+	const auto bytes = static_cast<unsigned long long>(size);
+	const auto mapping = CreateFileMappingA(
+		file, nullptr, PAGE_READONLY, static_cast<DWORD>(bytes >> 32U),
+		static_cast<DWORD>(bytes), nullptr);
+	if (mapping == nullptr) {
+		Close(fd);
+		return false;
+	}
+	auto* mapped = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0);
+	CloseHandle(mapping);
+	Close(fd);
+	if (mapped == nullptr) {
+		return false;
+	}
+	addr = static_cast<uint8_t*>(mapped);
+	return true;
+#else
+	int flags = MAP_PRIVATE;
+#if defined(__linux__)
+	if (fetch || occupy) {
+#ifdef MAP_POPULATE
+		flags |= MAP_POPULATE;
+#endif
+	}
+#ifdef MAP_LOCKED
+	if (occupy && geteuid() == 0) {
+		flags |= MAP_LOCKED;
+	}
+#endif
+#endif
+	auto* mapped = mmap(nullptr, size, PROT_READ, flags, fd, 0);
+	Close(fd);
+	if (mapped == MAP_FAILED) {
+		return false;
+	}
+#if !defined(__linux__) && defined(MADV_WILLNEED)
+	if (fetch) {
+		madvise(mapped, size, MADV_WILLNEED);
+	}
+#endif
+	addr = static_cast<uint8_t*>(mapped);
+	return true;
+#endif
+}
+
+void UnmapReadOnly(uint8_t* addr, size_t size) noexcept {
+	if (addr == nullptr) {
+		return;
+	}
+#if defined(_WIN32)
+	(void)size;
+	UnmapViewOfFile(addr);
+#else
+	munmap(addr, size);
+#endif
+}
+
+} // namespace
 
 namespace shd {
 
-static bool PReadAll(int fd, void* buf, size_t n, off_t off) noexcept {
-	auto data = static_cast<uint8_t*>(buf);
-	size_t done = 0;
-	while (done < n) {
-		auto m = pread(fd, data + done, n - done, off + done);
-		if (m > 0) {
-			done += m;
-			continue;
-		}
-		if (m < 0 && errno == EINTR) {
-			continue;
-		}
-		return false;
+struct DefaultLogger : Logger {
+	void printf(const char* format, va_list args) override {
+		::vfprintf(stderr, format, args);
 	}
-	return true;
-}
-
-static bool WriteAll(int fd, const void* buf, size_t n) noexcept {
-	auto data = static_cast<const uint8_t*>(buf);
-	size_t done = 0;
-	while (done < n) {
-		auto m = ::write(fd, data + done, n - done);
-		if (m > 0) {
-			done += m;
-			continue;
-		}
-		if (m < 0 && errno == EINTR) {
-			continue;
-		}
-		return false;
-	}
-	return true;
-}
-
-struct DefaultLogger : public Logger {
-	void printf(const char* format, va_list args) override;
 	static DefaultLogger instance;
 };
-void DefaultLogger::printf(const char *format, va_list args) {
-	::vfprintf(stderr, format, args);
-}
+
 DefaultLogger DefaultLogger::instance;
 Logger* Logger::s_instance = &DefaultLogger::instance;
 
-void Logger::Printf(const char* format, ... ) {
+void Logger::Printf(const char* format, ...) {
 	if (s_instance != nullptr) {
 		va_list args;
 		va_start(args, format);
@@ -81,152 +292,94 @@ void Logger::Printf(const char* format, ... ) {
 	}
 }
 
-static inline constexpr size_t RoundUp(size_t n) {
-	constexpr size_t m = 0x1fffff;
-	return (n+m)&(~m);
-};
-
 MemBlock::MemBlock(size_t size) noexcept : MemBlock() {
 	if (size == 0) {
 		return;
 	}
 	if (size >= 0x4000000) {
-		auto round_up_size = RoundUp(size);
-		void* addr = mmap(nullptr, round_up_size, PROT_READ | PROT_WRITE,
-						  MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB, -1, 0);
-		if (addr == MAP_FAILED && errno == ENOMEM) {
-			addr = mmap(nullptr, round_up_size, PROT_READ | PROT_WRITE,
-						MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-		}
-		if (addr != MAP_FAILED) {
+		if (auto* addr = AllocateLarge(size)) {
 			m_addr = static_cast<uint8_t*>(addr);
 			m_size = size;
 			m_mmap = 1;
-			if (madvise(addr, round_up_size, MADV_DONTDUMP) != 0) {
-				Logger::Printf("fail to madvise[%d]: %p | %lu\n", errno, addr, round_up_size);
-			}
 			return;
 		}
 	}
-	m_addr = static_cast<uint8_t*>(malloc(size));
+	m_addr = static_cast<uint8_t*>(std::malloc(size));
 	if (m_addr != nullptr) {
 		m_size = size;
 	}
 }
 
 MemBlock::~MemBlock() noexcept {
-	if (m_addr != nullptr) {
-		if (m_mmap) {
-			if (munmap(m_addr, RoundUp(m_size)) != 0) {
-				Logger::Printf("fail to munmap[%d]: %p | %lu\n", errno, m_addr, m_size);
-			};
-		} else {
-			free(m_addr);
-		}
+	if (m_addr == nullptr) {
+		return;
 	}
-}
-
-static MemBlock LoadAll(int fd) noexcept {
-	struct stat stat;
-	if (fstat(fd, &stat) != 0 || stat.st_size <= 0) {
-		return {};
+	if (m_mmap) {
+		FreeLarge(m_addr, m_size);
+	} else {
+		std::free(m_addr);
 	}
-	MemBlock out(stat.st_size);
-	if (!out) {
-		return {};
-	}
-	auto data = out.addr();
-	auto remain = out.size();
-	constexpr size_t block = 16*1024*1024;
-	size_t off = 0;
-	while (remain > block) {
-		auto next = off + block;
-		readahead(fd, next, block);
-		if (!PReadAll(fd, data, block, off)) {
-			return {};
-		}
-		off = next;
-		data += block;
-		remain -= block;
-	}
-	if (!PReadAll(fd, data, remain, off)) {
-		return {};
-	}
-	return out;
 }
 
 MemBlock MemBlock::LoadFile(const char* path) noexcept {
-	int fd = open(path, O_RDONLY);
+	const int fd = OpenRead(path);
 	if (fd < 0) {
 		Logger::Printf("fail to open file: %s\n", path);
 		return {};
 	}
-	auto out = LoadAll(fd);
-	close(fd);
-	if (!out) {
+
+	size_t size = 0;
+	if (!GetFileSize(fd, size)) {
+		Close(fd);
+		return {};
+	}
+	MemBlock out(size);
+	const bool ok = !out ? false : ReadAll(fd, out.addr(), out.size());
+	Close(fd);
+	if (!ok) {
 		Logger::Printf("fail to read whole file: %s\n", path);
+		return {};
 	}
 	return out;
 }
 
-
 MemMap::MemMap(const char* path, Policy policy) noexcept {
-	int fd = open(path, O_RDONLY);
-	if (fd < 0) {
-		Logger::Printf("fail to open file: %s\n", path);
+	uint8_t* addr = nullptr;
+	if (!MapReadOnly(path, policy == FETCH, policy == OCCUPY, addr, m_size)) {
 		return;
 	}
-	struct stat stat;
-	if (fstat(fd, &stat) != 0 || stat.st_size <= 0) {
-		close(fd);
-		return;
-	}
-	int flag = MAP_PRIVATE;
-	if (policy != MAP_ONLY) {
-		flag |= MAP_POPULATE;
-	}
-	if (policy == OCCUPY && geteuid() == 0) {
-		flag |= MAP_LOCKED;
-	}
-	auto addr = mmap(nullptr, stat.st_size, PROT_READ, flag, fd, 0);
-	close(fd);
-	if (addr == MAP_FAILED) {
-		return;
-	}
-	m_addr = static_cast<uint8_t*>(addr);
-	m_size = stat.st_size;
+	m_addr = addr;
 }
 
 MemMap::~MemMap() noexcept {
 	if (m_addr != nullptr) {
-		if (munmap(m_addr, m_size) != 0) {
-			Logger::Printf("fail to munmap[%d]: %p | %lu\n", errno, m_addr, m_size);
-		};
+		UnmapReadOnly(m_addr, m_size);
 	}
 }
 
 FileWriter::FileWriter(const char* path) {
-	m_fd = open(path, O_CREAT|O_TRUNC|O_WRONLY, 0644);
-	if (m_fd < 0) {
-		return;
+	m_fd = OpenWrite(path);
+	if (m_fd >= 0) {
+		m_buf = std::make_unique<uint8_t[]>(BUFSZ);
 	}
-	m_buf = std::make_unique<uint8_t[]>(BUFSZ);
 }
+
 FileWriter::~FileWriter() noexcept {
 	if (m_fd >= 0) {
 		_flush();
-		::close(m_fd);
+		Close(m_fd);
 	}
 }
+
 bool FileWriter::operator!() const noexcept {
 	return m_fd < 0;
 }
 
 bool FileWriter::_write(const void* data, size_t n) noexcept {
-	constexpr size_t block = 16*1024*1024;
+	constexpr size_t block = 16U * 1024U * 1024U;
 	while (n > block) {
 		if (!WriteAll(m_fd, data, block)) {
-			::close(m_fd);
+			Close(m_fd);
 			m_fd = -1;
 			return false;
 		}
@@ -234,7 +387,7 @@ bool FileWriter::_write(const void* data, size_t n) noexcept {
 		data = static_cast<const uint8_t*>(data) + block;
 	}
 	if (!WriteAll(m_fd, data, n)) {
-		::close(m_fd);
+		Close(m_fd);
 		m_fd = -1;
 		return false;
 	}
@@ -242,16 +395,14 @@ bool FileWriter::_write(const void* data, size_t n) noexcept {
 }
 
 bool FileWriter::flush() noexcept {
-	if (m_fd < 0) {
-		return false;
-	}
-	return _flush();
+	return m_fd >= 0 && _flush();
 }
+
 bool FileWriter::_flush() noexcept {
 	if (m_off == 0) {
 		return true;
 	}
-	auto n = m_off;
+	const auto n = m_off;
 	m_off = 0;
 	return _write(m_buf.get(), n);
 }
@@ -261,20 +412,20 @@ bool FileWriter::write(const void* data, size_t n) noexcept {
 		return false;
 	}
 	if (m_off + n < BUFSZ) {
-		memcpy(m_buf.get()+m_off, data, n);
-		m_off += n;
-	} else if (m_off + n < BUFSZ*2) {
-		auto m = BUFSZ - m_off;
-		memcpy(m_buf.get()+m_off, data, m);
+		std::memcpy(m_buf.get() + m_off, data, n);
+		m_off += static_cast<unsigned>(n);
+	} else if (m_off + n < BUFSZ * 2U) {
+		const auto m = BUFSZ - m_off;
+		std::memcpy(m_buf.get() + m_off, data, m);
 		if (!_write(m_buf.get(), BUFSZ)) {
 			return false;
 		}
-		m_off = n - m;
-		memcpy(m_buf.get(), (const uint8_t*)data+m, m_off);
+		m_off = static_cast<unsigned>(n - m);
+		std::memcpy(m_buf.get(), static_cast<const uint8_t*>(data) + m, m_off);
 	} else {
 		return _flush() && _write(data, n);
 	}
 	return true;
 }
 
-} //shd
+} // namespace shd

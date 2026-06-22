@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgtest-dev
+      - name: Configure
+        run: cmake -S . -B build -DSHD_BUILD_TESTS=ON -DSHD_BUILD_BENCHMARKS=OFF -DMODERN_CPU_ONLY=OFF
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: brew install googletest
+      - name: Configure
+        run: cmake -S . -B build -DSHD_BUILD_TESTS=ON -DSHD_BUILD_BENCHMARKS=OFF -DMODERN_CPU_ONLY=OFF -DCMAKE_PREFIX_PATH="$(brew --prefix googletest)"
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: vcpkg install gtest:x64-windows
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DSHD_BUILD_TESTS=ON -DSHD_BUILD_BENCHMARKS=OFF -DMODERN_CPU_ONLY=OFF -DCMAKE_TOOLCHAIN_FILE=":VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure

@@ -25,10 +25,17 @@
 #include <memory>
 #include <utility>
 #include <type_traits>
+#include "export.h"
 
 namespace shd {
 
-class MemBlock final {
+#if defined(_MSC_VER) && !defined(__clang__)
+#ifndef DISABLE_SOFT_DIVIDE
+#define DISABLE_SOFT_DIVIDE
+#endif
+#endif
+
+class SHD_API MemBlock final {
 public:
 	MemBlock() noexcept
 		: m_addr(nullptr), m_size(0), m_mmap(0)
@@ -65,12 +72,16 @@ private:
 };
 
 
-class MemMap final {
+class SHD_API MemMap final {
 public:
 	MemMap() noexcept = default;
 	~MemMap() noexcept;
 
-	enum Policy {MAP_ONLY, FETCH, OCCUPY};
+	enum Policy {
+		MAP_ONLY = 0,
+		FETCH = 1,
+		OCCUPY = 2
+	};
 	explicit MemMap(const char* path, Policy policy=MAP_ONLY) noexcept;
 
 	MemMap(MemMap&& other) noexcept
@@ -98,7 +109,7 @@ private:
 };
 
 
-class Logger {
+class SHD_API Logger {
 public:
 	virtual ~Logger() = default;
 	virtual void printf(const char* format, va_list args) = 0;
@@ -137,7 +148,7 @@ struct IDataWriter {
 	virtual ~IDataWriter() noexcept = default;
 };
 
-class FileWriter : public IDataWriter {
+class SHD_API FileWriter : public IDataWriter {
 public:
 	FileWriter() = default;
 	explicit FileWriter(const char* path);

@@ -49,25 +49,30 @@ static constexpr Retry DEFAULT_RETRY = {1, 4};
 
 using DataReaders = std::vector<std::unique_ptr<IDataReader>>;
 
-extern BuildStatus BuildIndex(const DataReaders& in, IDataWriter& out, Retry retry=DEFAULT_RETRY);
+SHD_API BuildStatus BuildIndex(const DataReaders& in, IDataWriter& out, Retry retry=DEFAULT_RETRY);
 
 //key should have fixed length
 //dynamic length key is not useful, just pad or use checksum instead
-extern BuildStatus BuildSet(const DataReaders& in, IDataWriter& out, Retry retry=DEFAULT_RETRY);
+SHD_API BuildStatus BuildSet(const DataReaders& in, IDataWriter& out, Retry retry=DEFAULT_RETRY);
 
 //key & value should have fixed length
 //inline large value may consume a lot of memory
-extern BuildStatus BuildDict(const DataReaders& in, IDataWriter& out, Retry retry=DEFAULT_RETRY);
+SHD_API BuildStatus BuildDict(const DataReaders& in, IDataWriter& out, Retry retry=DEFAULT_RETRY);
 
 //key should have fixed length
-extern BuildStatus BuildDictWithVariedValue(const DataReaders& in, IDataWriter& out, Retry retry=DEFAULT_RETRY);
+SHD_API BuildStatus BuildDictWithVariedValue(const DataReaders& in, IDataWriter& out, Retry retry=DEFAULT_RETRY);
 
-extern bool g_trace_build_time;
+SHD_API extern bool g_trace_build_time;
 
 
-class PerfectHashtable {
+class SHD_API PerfectHashtable {
 public:
-	enum LoadPolicy {MAP_ONLY, MAP_FETCH, MAP_OCCUPY, COPY_DATA};
+	enum LoadPolicy {
+		MAP_ONLY = 0,
+		MAP_FETCH = 1,
+		MAP_OCCUPY = 2,
+		COPY_DATA = 3
+	};
 	explicit PerfectHashtable(const std::string& path, LoadPolicy load_policy=MAP_ONLY);
 	PerfectHashtable(size_t size, const std::function<bool(uint8_t*)>& load);
 	bool operator!() const noexcept { return m_view == nullptr; }

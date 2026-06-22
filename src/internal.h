@@ -22,6 +22,9 @@
 
 #include <cstring>
 #include <functional>
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <intrin.h>
+#endif
 //#define SHD_PACK_SIZE 4
 #include <shd.h>
 #include "common.h"
@@ -47,13 +50,16 @@ union V96X {
 };
 
 static FORCE_INLINE bool operator==(const V96& a, const V96& b) {
-	V96X ax{.v = a};
-	V96X bx{.v = b};
+	V96X ax;
+	V96X bx;
+	ax.v = a;
+	bx.v = b;
 	return ax.u.l64 == bx.u.l64 && ax.u.h32 == bx.u.h32;
 }
 
 static FORCE_INLINE V96 GenID(uint32_t seed, const uint8_t* key, uint8_t len) {
-	V128X tmp{.v = HashTo128(key, len, seed)};
+	V128X tmp;
+	tmp.v = HashTo128(key, len, seed);
 	return tmp.u.l96;
 }
 static FORCE_INLINE uint16_t L0Hash(const V96& id) {
@@ -64,27 +70,59 @@ static FORCE_INLINE uint32_t L1Hash(const V96& id) {
 }
 static FORCE_INLINE uint64_t L2Hash(const V96& id, uint8_t sd8) {
 	const uint32_t seed = (sd8+1U) * 0xff00ffU;	//{sd8, ~sd8, sd8, ~sd8}
-	V128X tmp{ .u = {id, seed} };
+	V128X tmp;
+	tmp.u.l96 = id;
+	tmp.u.h32 = seed;
 	return tmp.v.l ^ tmp.v.h;
 }
 
 static FORCE_INLINE unsigned PopCount32(uint32_t x) {
 	static_assert(sizeof(int)==sizeof(uint32_t));
+	#if defined(_MSC_VER) && !defined(__clang__)
+	return __popcnt(x);
+#else
 	return __builtin_popcount(x);
+#endif
 }
 static FORCE_INLINE unsigned PopCount64(uint64_t x) {
 	static_assert(sizeof(long long)==sizeof(uint64_t));
+	#if defined(_MSC_VER) && !defined(__clang__)
+	return static_cast<unsigned>(__popcnt64(x));
+#else
 	return __builtin_popcountll(x);
+#endif
 }
 
 template <typename T>
 T FORCE_INLINE AddRelaxed(T& tgt, T val) {
+#if defined(_MSC_VER) && !defined(__clang__)
+	if constexpr (sizeof(T) == sizeof(uint64_t)) {
+		return static_cast<T>(_InterlockedExchangeAdd64(
+			reinterpret_cast<volatile long long*>(&tgt), static_cast<long long>(val)));
+	} else {
+		static_assert(sizeof(T) == sizeof(uint32_t), "unsupported atomic width");
+		return static_cast<T>(_InterlockedExchangeAdd(
+			reinterpret_cast<volatile long*>(&tgt), static_cast<long>(val)));
+	}
+#else
 	return __atomic_fetch_add(&tgt, val, __ATOMIC_RELAXED);
+#endif
 }
 
 template <typename T>
 T FORCE_INLINE SubRelaxed(T& tgt, T val) {
+#if defined(_MSC_VER) && !defined(__clang__)
+	if constexpr (sizeof(T) == sizeof(uint64_t)) {
+		return static_cast<T>(_InterlockedExchangeAdd64(
+			reinterpret_cast<volatile long long*>(&tgt), -static_cast<long long>(val)));
+	} else {
+		static_assert(sizeof(T) == sizeof(uint32_t), "unsupported atomic width");
+		return static_cast<T>(_InterlockedExchangeAdd(
+			reinterpret_cast<volatile long*>(&tgt), -static_cast<long>(val)));
+	}
+#else
 	return __atomic_fetch_sub(&tgt, val, __ATOMIC_RELAXED);
+#endif
 }
 
 static FORCE_INLINE bool TestAndSetBit(uint8_t bitmap[], size_t pos) {
@@ -99,6 +137,20 @@ static FORCE_INLINE bool TestAndSetBit(uint8_t bitmap[], size_t pos) {
 static FORCE_INLINE bool AtomicTestAndSetBit(uint8_t bitmap[], uint64_t pos) {
 	auto& b = bitmap[pos>>3U];
 	const uint8_t m = 1U << (pos&7U);
+#if defined(_MSC_VER) && !defined(__clang__)
+	for (;;) {
+		auto b0 = static_cast<uint8_t>(_InterlockedCompareExchange8(
+			reinterpret_cast<volatile char*>(&b), 0, 0));
+		if (b0 & m) {
+			return false;
+		}
+		auto b1 = static_cast<uint8_t>(b0 | m);
+		if (static_cast<uint8_t>(_InterlockedCompareExchange8(
+				reinterpret_cast<volatile char*>(&b), static_cast<char>(b1), static_cast<char>(b0))) == b0) {
+			return true;
+		}
+	}
+#else
 	while (true) {
 		auto b0 = __atomic_load_n(&b, __ATOMIC_ACQUIRE);
 		if (b0 & m) {
@@ -109,6 +161,7 @@ static FORCE_INLINE bool AtomicTestAndSetBit(uint8_t bitmap[], uint64_t pos) {
 			return true;
 		}
 	}
+#endif
 }
 
 static FORCE_INLINE void PrefetchBit(const uint8_t bitmap[], size_t pos) {

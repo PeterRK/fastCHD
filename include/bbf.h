@@ -31,7 +31,7 @@ using ::shd::IDataWriter;
 using ::shd::MemBlock;
 using ::shd::Divisor;
 
-class BloomFilter {
+class SHD_API BloomFilter {
 public:
 	explicit BloomFilter(size_t capacity);
 	explicit BloomFilter(const std::string& path);
