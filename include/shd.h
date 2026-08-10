@@ -90,8 +90,8 @@ public:
 	size_t item() const noexcept { return m_item; }
 
 	size_t locate(const uint8_t* key, uint8_t key_len) const noexcept;
-	void batch_locate(unsigned batch, const uint8_t* __restrict__ keys,
-					  uint8_t key_len, uint64_t* __restrict__ out);
+	void batch_locate(unsigned batch, const uint8_t* __restrict keys,
+					  uint8_t key_len, uint64_t* __restrict out);
 
 	//KEY_SET, KV_INLINE or KV_SEPARATED
 	//key is found when output slice is valid
@@ -103,12 +103,12 @@ public:
 					   const PerfectHashtable* patch=nullptr) const noexcept;
 
 	//only KV_INLINE, if dft_val == nullptr, do nothing when miss
-	unsigned batch_fetch(unsigned batch, const uint8_t* __restrict__ keys, uint8_t* __restrict__ data,
-						 const uint8_t* __restrict__ dft_val=nullptr,
+	unsigned batch_fetch(unsigned batch, const uint8_t* __restrict keys, uint8_t* __restrict data,
+						 const uint8_t* __restrict dft_val=nullptr,
 						 const PerfectHashtable* patch=nullptr) const noexcept;
 
-	unsigned batch_try_fetch(unsigned batch, const uint8_t* __restrict__ keys, uint8_t* __restrict__ data,
-							 unsigned* __restrict__ miss, const PerfectHashtable* patch=nullptr) const noexcept;
+	unsigned batch_try_fetch(unsigned batch, const uint8_t* __restrict keys, uint8_t* __restrict data,
+							 unsigned* __restrict miss, const PerfectHashtable* patch=nullptr) const noexcept;
 
 	BuildStatus derive(const DataReaders& in, IDataWriter& out, Retry retry=DEFAULT_RETRY) const;
 

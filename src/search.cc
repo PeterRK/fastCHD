@@ -115,8 +115,8 @@ static FORCE_INLINE Step3 Process3(const PackView& pack, const Step2& in, bool f
 	return out;
 }
 
-void BatchLocate(const PackView& index, unsigned batch, const uint8_t* __restrict__ keys,
-				 uint8_t key_len, uint64_t* __restrict__ out) {
+void BatchLocate(const PackView& index, unsigned batch, const uint8_t* __restrict keys,
+				 uint8_t key_len, uint64_t* __restrict out) {
 	Pipeline<8>(batch,
 				[&index, keys, key_len](unsigned i) -> Step1 {
 					return Process1(index, keys+i*key_len, key_len);
@@ -157,8 +157,8 @@ unsigned BatchSearch(const PackView& pack, unsigned batch, const uint8_t* const 
 	return hit;
 }
 
-unsigned BatchFetch(const PackView& pack, const uint8_t* __restrict__ dft_val, unsigned batch,
-				  const uint8_t* __restrict__ keys, uint8_t* __restrict__ data, unsigned* __restrict__ miss) {
+unsigned BatchFetch(const PackView& pack, const uint8_t* __restrict dft_val, unsigned batch,
+				  const uint8_t* __restrict keys, uint8_t* __restrict data, unsigned* __restrict miss) {
 	if (pack.type != Type::KV_INLINE) {
 		return 0;
 	}
@@ -257,8 +257,8 @@ unsigned BatchSearch(const PackView& base, const PackView& patch,
 	return hit;
 }
 
-unsigned BatchFetch(const PackView& base, const PackView& patch, const uint8_t* __restrict__ dft_val, unsigned batch,
-				  const uint8_t* __restrict__ keys, uint8_t* __restrict__ data, unsigned* __restrict__ miss) {
+unsigned BatchFetch(const PackView& base, const PackView& patch, const uint8_t* __restrict dft_val, unsigned batch,
+				  const uint8_t* __restrict keys, uint8_t* __restrict data, unsigned* __restrict miss) {
 	if (base.type != Type::KV_INLINE || base.type != patch.type
 		|| base.key_len != patch.key_len || base.val_len != patch.val_len) {
 		return 0;

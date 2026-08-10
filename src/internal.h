@@ -289,7 +289,12 @@ struct PackView {
 	const uint8_t* content = nullptr;
 	const uint8_t* extend = nullptr;
 	const uint8_t* space_end = nullptr;
+#if defined(_WIN32)
+	// MSVC does not support the zero-length flexible-array extension.
+	SegmentView segments[1];
+#else
 	SegmentView segments[0];
+#endif
 };
 
 extern std::unique_ptr<uint8_t[]> CreatePackView(const uint8_t* addr, size_t size);
@@ -305,16 +310,16 @@ extern void BatchDataMapping(const PackView& index, uint8_t* space, size_t batch
 extern void BatchFindPos(const PackView& pack, size_t batch, const std::function<void(uint8_t*)>& reader,
 						 const std::function<void(uint64_t)>& output, const uint8_t* bitmap);
 
-extern void BatchLocate(const PackView& index, unsigned batch, const uint8_t* __restrict__ keys,
-						uint8_t key_len, uint64_t* __restrict__ out);
+extern void BatchLocate(const PackView& index, unsigned batch, const uint8_t* __restrict keys,
+						uint8_t key_len, uint64_t* __restrict out);
 extern unsigned BatchSearch(const PackView& pack, unsigned batch, const uint8_t* const keys[], const uint8_t* out[]);
-extern unsigned BatchFetch(const PackView& pack, const uint8_t* __restrict__ dft_val, unsigned batch,
-						   const uint8_t* __restrict__ keys, uint8_t* __restrict__ data, unsigned* __restrict__ miss);
+extern unsigned BatchFetch(const PackView& pack, const uint8_t* __restrict dft_val, unsigned batch,
+						   const uint8_t* __restrict keys, uint8_t* __restrict data, unsigned* __restrict miss);
 extern unsigned BatchSearch(const PackView& base, const PackView& patch, unsigned batch,
 							const uint8_t* const keys[], const uint8_t* out[]);
-extern unsigned BatchFetch(const PackView& base, const PackView& patch, const uint8_t* __restrict__ dft_val,
-						   unsigned batch, const uint8_t* __restrict__ keys, uint8_t* __restrict__ data,
-						   unsigned* __restrict__ miss);
+extern unsigned BatchFetch(const PackView& base, const PackView& patch, const uint8_t* __restrict dft_val,
+						   unsigned batch, const uint8_t* __restrict keys, uint8_t* __restrict data,
+						   unsigned* __restrict miss);
 
 extern BuildStatus Rebuild(const PackView& base, const DataReaders& in, IDataWriter& out, Retry retry);
 

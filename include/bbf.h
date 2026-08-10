@@ -56,7 +56,7 @@ public:
 	bool set(const uint8_t* key, unsigned len) const noexcept;
 
 	unsigned batch_test(unsigned batch, unsigned key_len,
-						const uint8_t* __restrict__ keys, bool* __restrict__ out) const noexcept;
+						const uint8_t* __restrict keys, bool* __restrict out) const noexcept;
 
 	void batch_set(unsigned batch, unsigned key_len, const uint8_t* keys) const noexcept;
 

@@ -622,7 +622,7 @@ static BuildStatus Build(V96 ids[], V96 shadow[], std::vector<size_t>& shuffle, 
 						auto& k = idx[p];
 						for (unsigned j = 0; j < ctx.size(); j++) {
 							auto& range = ctx[k][p];
-							auto off = AddRelaxed(range.off, 1UL);
+							auto off = AddRelaxed(range.off, size_t{1});
 							if (LIKELY(off < range.end)) {
 								shadow[off] = ids[i];
 								break;
@@ -775,8 +775,15 @@ struct BasicInfo {
 };
 
 std::unique_ptr<uint8_t[]> CreateIndexView(const BasicInfo& info, uint32_t seed, const std::vector<IndexPiece>& pieces) {
+	if (pieces.empty()) {
+		return nullptr;
+	}
 	Assert(!pieces.empty());
+#if defined(_WIN32)
+	auto view = std::make_unique<uint8_t[]>(sizeof(PackView) + sizeof(SegmentView) * (pieces.size() - 1U));
+#else
 	auto view = std::make_unique<uint8_t[]>(sizeof(PackView) + sizeof(SegmentView) * pieces.size());
+#endif
 	auto index = (PackView*)view.get();
 	*index = PackView{};
 	index->key_len = info.key_len;

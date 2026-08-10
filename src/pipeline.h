@@ -31,7 +31,7 @@ void GenCode(unsigned depth) {
 	for (unsigned i = 1; i <= depth; i++) {
 		std::cout << ", typename P" << i;
 	}
-	std::cout << ">\nstatic inline __attribute__((always_inline)) void\nPipeline(size_t n";
+	std::cout << ">\nstatic FORCE_INLINE void\nPipeline(size_t n";
 	for (unsigned i = 1; i <= depth; i++) {
 		std::cout << ", const P" << i << "& p" << i;
 	}
@@ -88,9 +88,10 @@ void GenCode(unsigned depth) {
 ======================================================================== */
 
 #include <type_traits>
+#include "common.h"
 
 template <unsigned Bubble, typename P1, typename P2>
-static inline __attribute__((always_inline)) void
+static FORCE_INLINE void
 Pipeline(size_t n, const P1& p1, const P2& p2) {
 	using S1 = std::result_of_t<P1(size_t)>;
 	constexpr unsigned M = Bubble + 1;
@@ -119,7 +120,7 @@ Pipeline(size_t n, const P1& p1, const P2& p2) {
 }
 
 template <unsigned Bubble, typename P1, typename P2, typename P3>
-static inline __attribute__((always_inline)) void
+static FORCE_INLINE void
 Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3) {
 	using S1 = std::result_of_t<P1(size_t)>;
 	using S2 = std::result_of_t<P2(S1,size_t)>;
@@ -161,7 +162,7 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3) {
 }
 
 template <unsigned Bubble, typename P1, typename P2, typename P3, typename P4>
-static inline __attribute__((always_inline)) void
+static FORCE_INLINE void
 Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4) {
 	using S1 = std::result_of_t<P1(size_t)>;
 	using S2 = std::result_of_t<P2(S1,size_t)>;
@@ -218,7 +219,7 @@ Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4) {
 }
 
 template <unsigned Bubble, typename P1, typename P2, typename P3, typename P4, typename P5, typename P6, typename P7>
-static inline __attribute__((always_inline)) void
+static FORCE_INLINE void
 Pipeline(size_t n, const P1& p1, const P2& p2, const P3& p3, const P4& p4, const P5& p5, const P6& p6, const P7& p7) {
 	using S1 = std::result_of_t<P1(size_t)>;
 	using S2 = std::result_of_t<P2(S1,size_t)>;

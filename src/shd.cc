@@ -45,7 +45,11 @@ std::unique_ptr<uint8_t[]> CreatePackView(const uint8_t* addr, size_t size) {
 	addr_off += header->seg_cnt*4U;
 	if (size < addr_off) return nullptr;
 
+#if defined(_WIN32)
+	auto view = std::make_unique<uint8_t[]>(sizeof(PackView) + sizeof(SegmentView) * (header->seg_cnt - 1U));
+#else
 	auto view = std::make_unique<uint8_t[]>(sizeof(PackView) + sizeof(SegmentView) * header->seg_cnt);
+#endif
 	auto index = (PackView*)view.get();
 	*index = PackView{};
 	index->type = (Type)header->type;
@@ -159,8 +163,8 @@ size_t PerfectHashtable::locate(const uint8_t* key, uint8_t key_len) const noexc
 	return CalcPos(*index, key, key_len);
 }
 
-void PerfectHashtable::batch_locate(unsigned batch, const uint8_t* __restrict__ keys,
-									uint8_t key_len, uint64_t* __restrict__ out) {
+void PerfectHashtable::batch_locate(unsigned batch, const uint8_t* __restrict keys,
+									uint8_t key_len, uint64_t* __restrict out) {
 	auto index = (const PackView*)m_view.get();
 	if (UNLIKELY(index == nullptr || keys == nullptr || key_len == 0
 		|| (index->type != INDEX_ONLY && key_len != index->key_len))) {
@@ -225,8 +229,8 @@ unsigned PerfectHashtable::batch_search(unsigned batch, const uint8_t* const key
 	}
 }
 
-unsigned PerfectHashtable::batch_fetch(unsigned batch, const uint8_t* __restrict__ keys, uint8_t* __restrict__ data,
-									   const uint8_t* __restrict__ dft_val, const PerfectHashtable* patch) const noexcept {
+unsigned PerfectHashtable::batch_fetch(unsigned batch, const uint8_t* __restrict keys, uint8_t* __restrict data,
+									   const uint8_t* __restrict dft_val, const PerfectHashtable* patch) const noexcept {
 	auto base = (const PackView*)m_view.get();
 	if (base == nullptr || keys == nullptr || data == nullptr) {
 		return 0;
@@ -242,8 +246,8 @@ unsigned PerfectHashtable::batch_fetch(unsigned batch, const uint8_t* __restrict
 	}
 }
 
-unsigned PerfectHashtable::batch_try_fetch(unsigned batch, const uint8_t* __restrict__ keys, uint8_t* __restrict__ data,
-									   unsigned* __restrict__ miss, const PerfectHashtable* patch) const noexcept {
+unsigned PerfectHashtable::batch_try_fetch(unsigned batch, const uint8_t* __restrict keys, uint8_t* __restrict data,
+									   unsigned* __restrict miss, const PerfectHashtable* patch) const noexcept {
 	auto base = (const PackView*)m_view.get();
 	if (base == nullptr || keys == nullptr || data == nullptr) {
 		return 0;

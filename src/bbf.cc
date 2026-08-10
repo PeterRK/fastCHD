@@ -17,6 +17,7 @@
 //==============================================================================
 
 #include <cstring>
+#include <utility>
 #include "common.h"
 #include "bbf.h"
 #include "pipeline.h"
@@ -94,7 +95,7 @@ BloomFilter::BloomFilter(size_t size, const std::function<bool(uint8_t*)>& load)
 }
 
 unsigned BloomFilter::batch_test(unsigned batch, unsigned key_len,
-								 const uint8_t* __restrict__ keys, bool* __restrict__ out) const noexcept {
+								 const uint8_t* __restrict keys, bool* __restrict out) const noexcept {
 	auto space = reinterpret_cast<const uint64_t*>(m_mem.addr()+sizeof(uint64_t));
 	unsigned hit = 0;
 	Pipeline<15>(batch,
