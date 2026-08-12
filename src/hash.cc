@@ -54,7 +54,7 @@ static FORCE_INLINE void End(uint64_t& h0, uint64_t& h1, uint64_t& h2, uint64_t&
 }
 
 //SpookyHash
-V128 HashTo128(const uint8_t* msg, uint8_t len, uint64_t seed) {
+V128 HashTo128(const uint8_t* msg, unsigned len, uint64_t seed) {
 	constexpr uint64_t magic = 0xdeadbeefdeadbeefULL;
 
 	uint64_t a = seed;

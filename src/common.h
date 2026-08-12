@@ -33,7 +33,7 @@ struct V128 {
 	uint64_t h;
 };
 
-extern V128 HashTo128(const uint8_t* msg, uint8_t len, uint64_t seed=0);
+extern V128 HashTo128(const uint8_t* msg, unsigned len, uint64_t seed=0);
 
 } // shd
 

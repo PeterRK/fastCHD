@@ -88,7 +88,7 @@ std::unique_ptr<uint8_t[]> CreatePackView(const uint8_t* addr, size_t size) {
 		if (size < addr_off) return nullptr;
 		if (header->type == PerfectHashtable::KV_SEPARATED) {
 			index->extend = addr + addr_off;
-			if (size < addr_off + total_item*2U) return nullptr;
+			if (size < addr_off + total_item) return nullptr;
 		}
 	}
 	index->space_end = addr + size;
