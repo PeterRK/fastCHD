@@ -77,7 +77,7 @@ static FORCE_INLINE uint64_t CalcPos(const Step2& in) {
 	auto& section = in.seg->sections[in.section];
 	uint32_t cnt = section.step;	//step is the last field of section
 	auto v = (const uint64_t*)section.b32;
-	const uint64_t mask = (1LL << (in.bit_off & 63U)) - 1U;
+	const uint64_t mask = (1ULL << (in.bit_off & 63U)) - 1U;
 	switch (in.bit_off >> 6U) {
 		case 3: cnt += PopCount64(*v++);
 		case 2: cnt += PopCount64(*v++);
@@ -184,6 +184,7 @@ unsigned BatchFetch(const PackView& pack, const uint8_t* __restrict__ dft_val, u
 						src = dft_val;
 					} else if (miss != nullptr) {
 						*miss++ = i;
+						return;
 					} else {
 						return;
 					}
@@ -206,7 +207,8 @@ using Step6 = Relay<Step3>;
 unsigned BatchSearch(const PackView& base, const PackView& patch,
 					 unsigned batch, const uint8_t* const keys[], const uint8_t* out[]) {
 	if ((base.type != Type::KV_INLINE && base.type != Type::KEY_SET)
-		|| base.type != patch.type || base.key_len != patch.key_len) {
+		|| base.type != patch.type || base.key_len != patch.key_len
+		|| base.val_len != patch.val_len) {
 		return 0;
 	}
 
@@ -311,6 +313,7 @@ unsigned BatchFetch(const PackView& base, const PackView& patch, const uint8_t* 
 					src = dft_val;
 				} else if (miss != nullptr) {
 					*miss++ = i;
+					return;
 				} else {
 					return;
 				}
@@ -348,7 +351,10 @@ void BatchFindPos(const PackView& pack, size_t batch, const std::function<void(u
 		}
 		for (unsigned j = 0; j < m; j++) {
 			auto pos = CalcPos(state[j].s2);
-			assert(pos < pack.item);
+			if (UNLIKELY(pos >= pack.item)) {
+				state[j].s3 = {UINT64_MAX, nullptr};
+				continue;
+			}
 			auto line = pack.content + pos*pack.line_size;
 			PrefetchForNext(line);
 			if (bitmap != nullptr) {
@@ -359,7 +365,7 @@ void BatchFindPos(const PackView& pack, size_t batch, const std::function<void(u
 		for (unsigned j = 0; j < m; j++) {
 			auto key = buf.get() + j * pack.key_len;
 			auto& s = state[j].s3;
-			if (Equal(key, s.line, pack.key_len)) {
+			if (LIKELY(s.line != nullptr) && Equal(key, s.line, pack.key_len)) {
 				output(s.pos);
 			} else {
 				output(UINT64_MAX);

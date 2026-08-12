@@ -84,7 +84,9 @@ public:
 	uint16_t val_len() const noexcept { return m_val_len; }
 	size_t item() const noexcept { return m_item; }
 
+	// May return item().
 	size_t locate(const uint8_t* key, uint8_t key_len) const noexcept;
+	// Each result may equal item().
 	void batch_locate(unsigned batch, const uint8_t* __restrict__ keys,
 					  uint8_t key_len, uint64_t* __restrict__ out);
 

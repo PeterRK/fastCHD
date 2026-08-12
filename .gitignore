@@ -1,1 +1,4 @@
 build/*
+*.shd
+*.chd
+*.bbf
