@@ -299,6 +299,7 @@ struct PackView {
 
 extern std::unique_ptr<uint8_t[]> CreatePackView(const uint8_t* addr, size_t size);
 extern Slice SeparatedValue(const uint8_t* pt, const uint8_t* end);
+extern Slice SeparatedValueAt(const PackView& pack, const uint8_t* field);
 
 // May return index.item.
 extern uint64_t CalcPos(const PackView& index, const uint8_t* key, uint8_t key_len);

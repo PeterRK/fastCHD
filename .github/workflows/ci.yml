@@ -11,11 +11,13 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y libgtest-dev
       - name: Configure
-        run: cmake -S . -B build -DSHD_BUILD_TESTS=ON -DSHD_BUILD_BENCHMARKS=OFF -DMODERN_CPU_ONLY=OFF
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="${{ runner.temp }}/fastshd-install" -DSHD_BUILD_TESTS=ON -DSHD_BUILD_BENCHMARKS=OFF -DMODERN_CPU_ONLY=OFF
       - name: Build
         run: cmake --build build --parallel
       - name: Test
         run: ctest --test-dir build --output-on-failure
+      - name: Install
+        run: cmake --install build
 
   macos:
     runs-on: macos-latest
@@ -24,11 +26,13 @@ jobs:
       - name: Install dependencies
         run: brew install googletest
       - name: Configure
-        run: cmake -S . -B build -DSHD_BUILD_TESTS=ON -DSHD_BUILD_BENCHMARKS=OFF -DMODERN_CPU_ONLY=OFF -DCMAKE_PREFIX_PATH="$(brew --prefix googletest)"
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="${{ runner.temp }}/fastshd-install" -DSHD_BUILD_TESTS=ON -DSHD_BUILD_BENCHMARKS=OFF -DMODERN_CPU_ONLY=OFF -DCMAKE_PREFIX_PATH="$(brew --prefix googletest)"
       - name: Build
         run: cmake --build build --parallel
       - name: Test
         run: ctest --test-dir build --output-on-failure
+      - name: Install
+        run: cmake --install build
 
   windows:
     runs-on: windows-2025-vs2026
@@ -37,8 +41,29 @@ jobs:
       - name: Install dependencies
         run: vcpkg install gtest:x64-windows
       - name: Configure
-        run: cmake -S . -B build -G "Visual Studio 18 2026" -A x64 -DSHD_BUILD_TESTS=ON -DSHD_BUILD_BENCHMARKS=OFF -DMODERN_CPU_ONLY=OFF -DCMAKE_TOOLCHAIN_FILE="${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        run: cmake -S . -B build -G "Visual Studio 18 2026" -A x64 -DCMAKE_INSTALL_PREFIX="${{ runner.temp }}/fastshd-install" -DSHD_BUILD_TESTS=ON -DSHD_BUILD_BENCHMARKS=OFF -DMODERN_CPU_ONLY=OFF -DCMAKE_TOOLCHAIN_FILE="${env:VCPKG_INSTALLATION_ROOT}/scripts/buildsystems/vcpkg.cmake"
       - name: Build
         run: cmake --build build --config Release --parallel
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+      - name: Install
+        run: cmake --install build --config Release
+
+  sanitizer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y clang libgtest-dev
+      - name: Configure
+        run: >-
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+          -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined"
+          -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+          -DSHD_BUILD_TESTS=ON -DSHD_BUILD_BENCHMARKS=OFF -DMODERN_CPU_ONLY=OFF
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure

@@ -62,6 +62,7 @@ std::unique_ptr<uint8_t[]> CreatePackView(const uint8_t* addr, size_t size) {
 
 	uint64_t total_item = 0;
 	for (unsigned i = 0; i < header->seg_cnt; i++) {
+		if (parts[i] == 0) return nullptr;
 		index->segments[i] = SegmentView{};
 		index->segments[i].l1bd = L1Band(parts[i]);
 		index->segments[i].l2sz = L2Size(parts[i]);
@@ -195,6 +196,15 @@ Slice SeparatedValue(const uint8_t* pt, const uint8_t* end) {
 	return {};
 }
 
+Slice SeparatedValueAt(const PackView& pack, const uint8_t* field) {
+	const auto offset = ReadOffsetField(field);
+	const auto extend_size = static_cast<size_t>(pack.space_end-pack.extend);
+	if (offset >= extend_size) {
+		return {};
+	}
+	return SeparatedValue(pack.extend+offset, pack.space_end);
+}
+
 Slice PerfectHashtable::search(const uint8_t* key) const noexcept {
 	auto pack = (const PackView*)m_view.get();
 	if (UNLIKELY(pack == nullptr || key == nullptr || pack->type == INDEX_ONLY)) {
@@ -209,7 +219,7 @@ Slice PerfectHashtable::search(const uint8_t* key) const noexcept {
 	if (pack->type != KV_SEPARATED) {
 		return {field, pack->val_len};
 	}
-	return SeparatedValue(pack->extend+ReadOffsetField(field), pack->space_end);
+	return SeparatedValueAt(*pack, field);
 }
 
 unsigned PerfectHashtable::batch_search(unsigned batch, const uint8_t* const keys[], const uint8_t* out[],

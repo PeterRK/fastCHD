@@ -17,7 +17,10 @@
 #===============================================================================
 
 cmake_minimum_required(VERSION 3.15)
-project(fastSHD)
+project(fastSHD VERSION 2.1.1)
+
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -54,7 +57,10 @@ file(GLOB source CONFIGURE_DEPENDS src/*.cc)
 
 add_library(shd SHARED ${source})
 target_compile_features(shd PUBLIC cxx_std_17)
-target_include_directories(shd PUBLIC ${CMAKE_SOURCE_DIR}/include)
+target_include_directories(shd PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
 target_link_libraries(shd PRIVATE Threads::Threads)
 target_compile_definitions(shd PRIVATE SHD_BUILDING_SHARED PUBLIC SHD_USING_SHARED)
 target_compile_definitions(shd PRIVATE $<$<CONFIG:Release>:NDEBUG>)
@@ -75,3 +81,26 @@ if (SHD_BUILD_BENCHMARKS)
     add_executable(bench-billion benchmark/billion.cc)
     target_link_libraries(bench-billion PRIVATE Threads::Threads gflags::gflags shd)
 endif()
+
+install(TARGETS shd
+    EXPORT fastSHDTargets
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+set(fastSHD_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/fastSHD")
+configure_package_config_file(
+    cmake/fastSHDConfig.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/fastSHDConfig.cmake"
+    INSTALL_DESTINATION "${fastSHD_INSTALL_CMAKEDIR}"
+)
+install(EXPORT fastSHDTargets
+    FILE fastSHDTargets.cmake
+    NAMESPACE fastSHD::
+    DESTINATION "${fastSHD_INSTALL_CMAKEDIR}"
+)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/fastSHDConfig.cmake"
+    DESTINATION "${fastSHD_INSTALL_CMAKEDIR}"
+)

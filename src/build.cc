@@ -698,7 +698,7 @@ static BuildStatus Build(bool use_extra_mem, uint32_t seed, const DataReaders& i
 	threads.reserve(n);
 	std::vector<size_t> shuffle(n, 0);
 
-	bool fail = false;
+	std::atomic<bool> fail{false};
 	size_t off = 0;
 	for (auto& reader : in) {
 		reader->reset();
@@ -709,7 +709,7 @@ static BuildStatus Build(bool use_extra_mem, uint32_t seed, const DataReaders& i
 			for (size_t j = 0; j < cnt; j++) {
 				auto key = reader->read(true).key;
 				if (key.ptr == nullptr || key.len == 0 || key.len > MAX_KEY_LEN) {
-					fail = true;
+					fail.store(true, std::memory_order_relaxed);
 					return;
 				}
 				ids[j] = GenID(seed, key.ptr, key.len);
@@ -724,7 +724,7 @@ static BuildStatus Build(bool use_extra_mem, uint32_t seed, const DataReaders& i
 	for (auto& t : threads) {
 		t.join();
 	}
-	if (fail) {
+	if (fail.load(std::memory_order_relaxed)) {
 		return BUILD_STATUS_BAD_INPUT;
 	}
 	auto spot5 = std::chrono::steady_clock::now();
@@ -912,18 +912,18 @@ static BuildStatus FillInlineKeyValue(const PackView& index, const DataReaders& 
 	} else {
 		std::vector<std::thread> threads;
 		threads.reserve(in.size());
-		bool fail = false;
+		std::atomic<bool> fail{false};
 		for (auto& reader : in) {
 			threads.emplace_back([&fail, &space, &index](IDataReader* reader) {
 				if (!FillKeyValue(index, *reader, space.addr())) {
-					fail = true;
+					fail.store(true, std::memory_order_relaxed);
 				}
 			}, reader.get());
 		}
 		for (auto& t : threads) {
 			t.join();
 		}
-		if (fail) {
+		if (fail.load(std::memory_order_relaxed)) {
 			return BUILD_STATUS_BAD_INPUT;
 		}
 	}
@@ -1128,7 +1128,7 @@ public:
 				if (m_base.type != Type::KV_SEPARATED) {
 					out.val = {field, m_base.val_len};
 				} else {
-					out.val = SeparatedValue(m_base.extend+ReadOffsetField(field), m_base.space_end);
+					out.val = SeparatedValueAt(m_base, field);
 				}
 			}
 			return out;
@@ -1197,7 +1197,7 @@ static DataReaders PrepareForRebuild(const PackView& base, const DataReaders& in
 
 	std::vector<std::thread> threads;
 	threads.reserve(in.size());
-	bool fail = false;
+	std::atomic<bool> fail{false};
 	for (auto& reader : in) {
 		reader->reset();
 		threads.emplace_back([&base, &shards, &fail, dirty](IDataReader* reader) {
@@ -1230,7 +1230,7 @@ static DataReaders PrepareForRebuild(const PackView& base, const DataReaders& in
 								 }
 							 }, dirty->addr());
 			} catch (const BuildException&) {
-				fail = true;
+				fail.store(true, std::memory_order_relaxed);
 				return;
 			}
 			for (unsigned j = 0; j < shards.size(); j++) {
@@ -1241,7 +1241,7 @@ static DataReaders PrepareForRebuild(const PackView& base, const DataReaders& in
 	for (auto& t : threads) {
 		t.join();
 	}
-	if (fail) {
+	if (fail.load(std::memory_order_relaxed)) {
 		return {};
 	}
 
@@ -1260,7 +1260,7 @@ BuildStatus Rebuild(const PackView& base, const DataReaders& in, IDataWriter& ou
 	}
 	auto spot2 = std::chrono::steady_clock::now();
 	if (g_trace_build_time) {
-		Logger::Printf("prepare: %lds\n", DurationS(spot1, spot2));
+		Logger::Printf("prepare: %.3fs\n", DurationS(spot1, spot2));
 	}
 	switch (base.type) {
 		case Type::KEY_SET:
