@@ -64,9 +64,6 @@ target_include_directories(shd PUBLIC
 target_link_libraries(shd PRIVATE Threads::Threads)
 target_compile_definitions(shd PRIVATE SHD_BUILDING_SHARED PUBLIC SHD_USING_SHARED)
 target_compile_definitions(shd PRIVATE $<$<CONFIG:Release>:NDEBUG>)
-if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
-    target_compile_options(shd PRIVATE -fvisibility=hidden)
-endif()
 
 if (SHD_BUILD_TESTS)
     find_package(GTest REQUIRED)

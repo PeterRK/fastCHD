@@ -19,6 +19,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 
 #include <utils.h>
 
@@ -37,8 +38,6 @@
 #include <sys/stat.h>
 
 #include <algorithm>
-#include <limits>
-
 #else
 
 #include <algorithm>
@@ -156,8 +155,58 @@ bool WriteAll(int fd, const void* buf, size_t size) noexcept {
 }
 
 #if !defined(_WIN32)
+static unsigned DetectHugePageShift() noexcept {
+#if !defined(__linux__) || !defined(MAP_HUGETLB)
+	return 0;
+#else
+	auto* file = std::fopen("/proc/meminfo", "r");
+	if (file == nullptr) {
+		return 0;
+	}
+
+	unsigned shift = 0;
+	char line[256];
+	while (std::fgets(line, sizeof(line), file) != nullptr) {
+		static constexpr char prefix[] = "Hugepagesize:";
+		if (std::strncmp(line, prefix, sizeof(prefix) - 1) != 0) {
+			continue;
+		}
+
+		unsigned long long size_kb = 0;
+		char unit[3]{};
+		char extra = 0;
+		const auto count = std::sscanf(line + sizeof(prefix) - 1,
+									   " %llu %2s %c", &size_kb, unit, &extra);
+		if (count != 2 || std::strcmp(unit, "kB") != 0 ||
+			size_kb > std::numeric_limits<size_t>::max() / 1024U) {
+			break;
+		}
+
+		const auto size = static_cast<size_t>(size_kb) * 1024U;
+		static constexpr size_t max_size = 16U * 1024U * 1024U;
+		if (size == 0 || size > max_size || (size & (size - 1U)) != 0) {
+			break;
+		}
+		for (auto value = size; value > 1U; value >>= 1U) {
+			++shift;
+		}
+		break;
+	}
+	std::fclose(file);
+	return shift;
+#endif
+}
+
+static const unsigned SHD_HUGEPAGE_SHIFT = DetectHugePageShift();
+
 static size_t RoundUp(size_t size) noexcept {
-	constexpr size_t mask = 0x1fffff;
+	if (SHD_HUGEPAGE_SHIFT == 0) {
+		return size;
+	}
+	const size_t mask = (size_t{1} << SHD_HUGEPAGE_SHIFT) - 1U;
+	if (size > std::numeric_limits<size_t>::max() - mask) {
+		return 0;
+	}
 	return (size + mask) & ~mask;
 }
 #endif
@@ -167,6 +216,9 @@ void* AllocateLarge(size_t size) noexcept {
 	return VirtualAlloc(nullptr, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 #else
 	const auto rounded = RoundUp(size);
+	if (rounded == 0) {
+		return nullptr;
+	}
 	void* addr = MAP_FAILED;
 #if defined(MAP_ANONYMOUS)
 	constexpr int anonymous = MAP_ANONYMOUS;
@@ -174,8 +226,10 @@ void* AllocateLarge(size_t size) noexcept {
 	constexpr int anonymous = MAP_ANON;
 #endif
 #if defined(__linux__) && defined(MAP_HUGETLB)
-	addr = mmap(nullptr, rounded, PROT_READ | PROT_WRITE,
-				MAP_PRIVATE | anonymous | MAP_HUGETLB, -1, 0);
+	if (SHD_HUGEPAGE_SHIFT != 0) {
+		addr = mmap(nullptr, rounded, PROT_READ | PROT_WRITE,
+					MAP_PRIVATE | anonymous | MAP_HUGETLB, -1, 0);
+	}
 #endif
 	if (addr == MAP_FAILED) {
 		addr = mmap(nullptr, rounded, PROT_READ | PROT_WRITE,
@@ -275,6 +329,14 @@ void UnmapReadOnly(uint8_t* addr, size_t size) noexcept {
 } // namespace
 
 namespace shd {
+
+unsigned GetHugePageShift() noexcept {
+#if defined(_WIN32)
+	return 0;
+#else
+	return SHD_HUGEPAGE_SHIFT;
+#endif
+}
 
 struct DefaultLogger : Logger {
 	void printf(const char* format, va_list args) override {

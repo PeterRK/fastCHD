@@ -18,8 +18,19 @@
 
 #include <limits>
 #include <random>
+#if defined(__linux__)
+#include <cstdio>
+#include <cstring>
+#include <sys/mman.h>
+#endif
 #include <gtest/gtest.h>
 #include <utils.h>
+
+#if defined(__linux__)
+namespace shd {
+unsigned GetHugePageShift() noexcept;
+}
+#endif
 
 
 template<typename Word>
@@ -73,3 +84,54 @@ TEST(Divisor, Uint16) {
 TEST(Divisor, Uint8) {
 	TestDivisor<uint8_t>();
 }
+
+#if defined(__linux__)
+static bool ExpectedHugePageShift(unsigned& shift,
+								unsigned long long& kb) noexcept {
+	auto* file = std::fopen("/proc/meminfo", "r");
+	if (file == nullptr) {
+		return false;
+	}
+
+	bool found = false;
+	char line[256];
+	while (std::fgets(line, sizeof(line), file) != nullptr) {
+		if (std::strncmp(line, "Hugepagesize:", 13) != 0) {
+			continue;
+		}
+		char unit[3]{};
+		found = std::sscanf(line + 13, "%llu %2s", &kb, unit) == 2 &&
+				std::strcmp(unit, "kB") == 0;
+		break;
+	}
+	std::fclose(file);
+	if (!found) {
+		return false;
+	}
+
+	shift = 0;
+#if defined(MAP_HUGETLB)
+	constexpr unsigned long long limit = 16U * 1024U;
+	if (kb == 0 || kb > limit) {
+		return true;
+	}
+	auto size = kb * 1024U;
+	if ((size & (size - 1U)) != 0) {
+		return true;
+	}
+	while (size > 1U) {
+		size >>= 1U;
+		++shift;
+	}
+#endif
+	return true;
+}
+
+TEST(HugePage, StartupDetection) {
+	unsigned expected = 0;
+	unsigned long long kb = 0;
+	ASSERT_TRUE(ExpectedHugePageShift(expected, kb));
+	EXPECT_EQ(shd::GetHugePageShift(), expected)
+		<< "Hugepagesize=" << kb << " kB";
+}
+#endif
