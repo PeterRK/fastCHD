@@ -171,15 +171,17 @@ static size_t SumInputSize(const DataReaders& in) {
 	return total;
 }
 
-template <typename Hash, typename Offset, typename Border>
-static FORCE_INLINE void Shuffle(V96 ids[], uint32_t parts,
-								 const Hash& hash, const Offset& offset, const Border& border, bool prefetch=true) {
+template <typename Hash, typename Offset, typename Border, typename Order>
+static FORCE_INLINE void ShuffleInOrder(V96 ids[], uint32_t parts,
+										const Hash& hash, const Offset& offset, const Border& border,
+										const Order& order, bool prefetch) {
 	auto prefetch4 = [ids, prefetch](size_t k) {
 		if (prefetch && (k & 3UL) == 0) {
 			PrefetchForFuture(&ids[k+4]);
 		}
 	};
-	for (uint32_t p = 0; p < parts; p++) {
+	for (uint32_t rank = 0; rank < parts; rank++) {
+		const auto p = order(rank);
 		while (offset(p) < border(p)) {
 			auto i = offset(p);
 			auto q = hash(ids[i]);
@@ -204,6 +206,13 @@ static FORCE_INLINE void Shuffle(V96 ids[], uint32_t parts,
 			ids[i] = tmp;
 		}
 	}
+}
+
+template <typename Hash, typename Offset, typename Border>
+static FORCE_INLINE void Shuffle(V96 ids[], uint32_t parts,
+								 const Hash& hash, const Offset& offset, const Border& border, bool prefetch=true) {
+	ShuffleInOrder(ids, parts, hash, offset, border,
+				   [](uint32_t p) { return p; }, prefetch);
 }
 
 template <typename SizeT, typename Offset>
@@ -304,7 +313,12 @@ static NOINLINE uint32_t L1SortMarking(V96 ids[], uint32_t total, const Divisor<
 					});
 }
 
-static NOINLINE L1Mark* L1SortReorder(uint32_t max, unsigned n, L1Mark table[], L1Mark temp[]) {
+struct L1Order {
+	L1Mark* range;
+	L1Mark* sorted;
+};
+
+static NOINLINE L1Order L1SortReorder(uint32_t max, unsigned n, L1Mark table[], L1Mark temp[]) {
 	Assert(n > 0);
 	uint32_t memo[256];
 	for (unsigned sft = 0; sft < 32U && (1U<<sft) <= max; sft += 8) {
@@ -333,7 +347,7 @@ static NOINLINE L1Mark* L1SortReorder(uint32_t max, unsigned n, L1Mark table[], 
 		off += cnt;
 		rg.val = off;
 	}
-	return temp;
+	return {temp, table};
 }
 
 static NOINLINE void L1SortShuffle(V96 ids[], const Divisor<uint32_t>& l1sz, L1Mark range[]) {
@@ -350,6 +364,78 @@ static NOINLINE void L1SortShuffle(V96 ids[], const Divisor<uint32_t>& l1sz, L1M
 			false);
 }
 
+static FORCE_INLINE uint32_t L1BucketAt(const L1Mark sorted[], uint32_t l1sz, uint32_t rank) {
+	return sorted[l1sz-rank-1U].idx;
+}
+
+static void L1SortShuffleRange(V96 ids[], const Divisor<uint32_t>& l1sz, L1Mark range[],
+							  const L1Mark sorted[], uint32_t rank_begin, uint32_t rank_end) {
+	ShuffleInOrder(ids, rank_end-rank_begin,
+				   [l1sz](const V96& id)->uint32_t {
+					   return L1Hash(id) % l1sz;
+				   },
+				   [range](uint32_t i)->uint32_t& {
+					   return range[i].idx;
+				   },
+				   [range](uint32_t i)->uint32_t {
+					   return range[i].val;
+				   },
+				   [sorted, l1sz, rank_begin](uint32_t rank) {
+					   return L1BucketAt(sorted, l1sz.value(), rank_begin+rank);
+				   },
+				   false);
+}
+
+static void L1SortLocalize(V96 ids[], const Divisor<uint32_t>& l1sz, L1Mark range[],
+						  const L1Mark sorted[], uint32_t rank_begin, uint32_t rank_end,
+						  uint32_t begin, uint32_t end) {
+	// First partition by final destination using sequential scans, then keep the
+	// exact cyclic shuffle inside a cache-sized range.
+	static constexpr uint32_t TILE_ITEMS = 1U << 16U;
+	if (end-begin <= TILE_ITEMS || rank_end-rank_begin <= 1U) {
+		L1SortShuffleRange(ids, l1sz, range, sorted, rank_begin, rank_end);
+		return;
+	}
+
+	const uint32_t midpoint = begin + (end-begin)/2U;
+	uint32_t low = rank_begin+1U;
+	uint32_t high = rank_end;
+	while (low < high) {
+		const uint32_t mid = low + (high-low)/2U;
+		const auto bucket = L1BucketAt(sorted, l1sz.value(), mid);
+		if (range[bucket].idx < midpoint) {
+			low = mid+1U;
+		} else {
+			high = mid;
+		}
+	}
+	const uint32_t rank_mid = std::min(low, rank_end-1U);
+	const auto right_bucket = L1BucketAt(sorted, l1sz.value(), rank_mid);
+	const uint32_t split = range[right_bucket].idx;
+	Assert(split > begin && split < end);
+
+	auto cut = std::partition(ids+begin, ids+end, [l1sz, range, split](const V96& id) {
+		const auto bucket = L1Hash(id) % l1sz;
+		return range[bucket].idx < split;
+	});
+	Assert(cut == ids+split);
+
+	L1SortLocalize(ids, l1sz, range, sorted, rank_begin, rank_mid, begin, split);
+	L1SortLocalize(ids, l1sz, range, sorted, rank_mid, rank_end, split, end);
+}
+
+static NOINLINE void L1SortShuffleLocalized(V96 ids[], uint32_t total,
+											const Divisor<uint32_t>& l1sz,
+											L1Mark range[], const L1Mark sorted[]) {
+	// Small inputs are already cache-friendly and do not repay an extra pass.
+	static constexpr uint32_t LOCALIZE_MIN_ITEMS = 1U << 18U;
+	if (total < LOCALIZE_MIN_ITEMS) {
+		L1SortShuffle(ids, l1sz, range);
+		return;
+	}
+	L1SortLocalize(ids, l1sz, range, sorted, 0, l1sz.value(), 0, total);
+}
+
 static NOINLINE void L1SortShuffle(V96 ids[], V96 shadow[], uint32_t total,
 								   const Divisor<uint32_t>& l1sz, L1Mark range[]) {
 	Shuffle(ids, shadow, total,
@@ -364,14 +450,13 @@ static V96* L1Sort(V96 ids[], V96 shadow[], uint32_t total, const Divisor<uint32
 	if (max > std::min(l1sz.value()+16U, (uint32_t)UINT16_MAX)) {
 		return nullptr;
 	}
-	auto range = L1SortReorder(max, l1sz.value(), (L1Mark*)mem.addr(), (L1Mark*)mem.addr()+l1sz.value());
+	auto order = L1SortReorder(max, l1sz.value(), (L1Mark*)mem.addr(), (L1Mark*)mem.addr()+l1sz.value());
 	if (shadow == nullptr) {
-		L1SortShuffle(ids, l1sz, range);
-		return ids;
+		L1SortShuffleLocalized(ids, total, l1sz, order.range, order.sorted);
 	} else {
-		L1SortShuffle(ids, shadow, total, l1sz, range);
-		return shadow;
+		L1SortShuffle(ids, shadow, total, l1sz, order.range);
 	}
+	return shadow == nullptr? ids : shadow;
 }
 
 static NOINLINE BuildStatus Build(V96 ids[], V96 shadow[], IndexPiece& out) {
