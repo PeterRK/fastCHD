@@ -159,6 +159,29 @@ TEST(SHD, SmallSet) {
 	}
 }
 
+TEST(SHD, LocalizedShuffle) {
+	static constexpr uint64_t TOTAL = (1U << 18U) + 1U;
+	const std::string filename = "localized-shuffle.shd";
+	{
+		shd::FileWriter output(filename.c_str());
+		shd::DataReaders input;
+		input.push_back(std::make_unique<EmbeddingGenerator>(0, TOTAL));
+		ASSERT_EQ(shd::BuildSet(input, output), shd::BUILD_STATUS_OK);
+	}
+
+	shd::PerfectHashtable table(filename);
+	ASSERT_FALSE(!table);
+	ASSERT_EQ(table.type(), shd::PerfectHashtable::KEY_SET);
+	ASSERT_EQ(table.item(), TOTAL);
+	for (uint64_t key = 0; key < TOTAL; key++) {
+		const auto value = table.search(reinterpret_cast<const uint8_t*>(&key));
+		ASSERT_TRUE(value.valid()) << "key=" << key;
+		ASSERT_EQ(value.len, 0U);
+	}
+	uint64_t missing = TOTAL;
+	ASSERT_FALSE(table.search(reinterpret_cast<const uint8_t*>(&missing)).valid());
+}
+
 TEST(SHD, InlinedDict) {
 	const std::string filename = "dict.shd";
 	{
