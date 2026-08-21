@@ -40,35 +40,62 @@ TEST(CHD, Build) {
 	FakeWriter fake_output;
 
 	chd::DataReaders fake_input;
+	ASSERT_EQ(chd::BuildIndex(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
+	ASSERT_EQ(chd::BuildIndexFast(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
 	ASSERT_EQ(chd::BuildSet(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
+	ASSERT_EQ(chd::BuildSetFast(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
 	ASSERT_EQ(chd::BuildDict(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
+	ASSERT_EQ(chd::BuildDictFast(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
 	ASSERT_EQ(chd::BuildDictWithVariedValue(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
+	ASSERT_EQ(chd::BuildDictWithVariedValueFast(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
 
 	fake_input.push_back(std::make_unique<EmbeddingGenerator>(0, 0));
+	ASSERT_EQ(chd::BuildIndex(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
+	ASSERT_EQ(chd::BuildIndexFast(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
 	ASSERT_EQ(chd::BuildSet(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
+	ASSERT_EQ(chd::BuildSetFast(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
 	ASSERT_EQ(chd::BuildDict(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
+	ASSERT_EQ(chd::BuildDictFast(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
 	ASSERT_EQ(chd::BuildDictWithVariedValue(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
+	ASSERT_EQ(chd::BuildDictWithVariedValueFast(fake_input, fake_output), chd::BUILD_STATUS_BAD_INPUT);
 
 	fake_input.push_back(std::make_unique<EmbeddingGenerator>(0, 1));
+	ASSERT_EQ(chd::BuildIndex(fake_input, fake_output), chd::BUILD_STATUS_OK);
+	ASSERT_EQ(chd::BuildIndexFast(fake_input, fake_output), chd::BUILD_STATUS_OK);
 	ASSERT_EQ(chd::BuildSet(fake_input, fake_output), chd::BUILD_STATUS_OK);
+	ASSERT_EQ(chd::BuildSetFast(fake_input, fake_output), chd::BUILD_STATUS_OK);
 	ASSERT_EQ(chd::BuildDict(fake_input, fake_output), chd::BUILD_STATUS_OK);
+	ASSERT_EQ(chd::BuildDictFast(fake_input, fake_output), chd::BUILD_STATUS_OK);
 	ASSERT_EQ(chd::BuildDictWithVariedValue(fake_input, fake_output), chd::BUILD_STATUS_OK);
+	ASSERT_EQ(chd::BuildDictWithVariedValueFast(fake_input, fake_output), chd::BUILD_STATUS_OK);
 
 	auto emb_gen = CreateReaders<EmbeddingGenerator>(1, EmbeddingGenerator::MASK0);
+	ASSERT_EQ(chd::BuildIndex(emb_gen, fake_output), chd::BUILD_STATUS_OK);
+	ASSERT_EQ(chd::BuildIndexFast(emb_gen, fake_output), chd::BUILD_STATUS_OK);
 	ASSERT_EQ(chd::BuildSet(emb_gen, fake_output), chd::BUILD_STATUS_OK);
+	ASSERT_EQ(chd::BuildSetFast(emb_gen, fake_output), chd::BUILD_STATUS_OK);
 	ASSERT_EQ(chd::BuildDict(emb_gen, fake_output), chd::BUILD_STATUS_OK);
+	ASSERT_EQ(chd::BuildDictFast(emb_gen, fake_output), chd::BUILD_STATUS_OK);
 	ASSERT_EQ(chd::BuildDictWithVariedValue(emb_gen, fake_output), chd::BUILD_STATUS_OK);
+	ASSERT_EQ(chd::BuildDictWithVariedValueFast(emb_gen, fake_output), chd::BUILD_STATUS_OK);
 
 	auto var_gen = CreateReaders<VariedValueGenerator>(1, 5U);
 	ASSERT_EQ(chd::BuildDict(var_gen, fake_output), chd::BUILD_STATUS_BAD_INPUT);
+	ASSERT_EQ(chd::BuildDictFast(var_gen, fake_output), chd::BUILD_STATUS_BAD_INPUT);
 	ASSERT_EQ(chd::BuildDictWithVariedValue(var_gen, fake_output), chd::BUILD_STATUS_OK);
+	ASSERT_EQ(chd::BuildDictWithVariedValueFast(var_gen, fake_output), chd::BUILD_STATUS_OK);
 
 	emb_gen = CreateReaders<EmbeddingGenerator>(3, EmbeddingGenerator::MASK0);
+	ASSERT_EQ(chd::BuildIndex(emb_gen, fake_output), chd::BUILD_STATUS_OK);
+	ASSERT_EQ(chd::BuildIndexFast(emb_gen, fake_output), chd::BUILD_STATUS_OK);
 	ASSERT_EQ(chd::BuildSet(emb_gen, fake_output), chd::BUILD_STATUS_OK);
+	ASSERT_EQ(chd::BuildSetFast(emb_gen, fake_output), chd::BUILD_STATUS_OK);
 	ASSERT_EQ(chd::BuildDict(emb_gen, fake_output), chd::BUILD_STATUS_OK);
+	ASSERT_EQ(chd::BuildDictFast(emb_gen, fake_output), chd::BUILD_STATUS_OK);
 
 	var_gen = CreateReaders<VariedValueGenerator>(3, 5U);
 	ASSERT_EQ(chd::BuildDictWithVariedValue(var_gen, fake_output), chd::BUILD_STATUS_OK);
+	ASSERT_EQ(chd::BuildDictWithVariedValueFast(var_gen, fake_output), chd::BUILD_STATUS_OK);
 }
 
 TEST(CHD, KeySet) {

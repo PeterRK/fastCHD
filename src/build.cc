@@ -814,7 +814,8 @@ std::unique_ptr<uint8_t[]> CreateIndexView(const BasicInfo& info, uint32_t seed,
 }
 
 static BuildStatus BuildAndDump(const DataReaders& in, IDataWriter& out, const BasicInfo& info, Retry retry,
-								const std::function<BuildStatus(const PackView&, const DataReaders&, IDataWriter&)>& fill) {
+								const std::function<BuildStatus(const PackView&, const DataReaders&, IDataWriter&)>& fill,
+								bool force_extra_mem=false) {
 	const size_t total = SumInputSize(in);
 	if (in.empty() || in.size() > MAX_SEGMENT || total == 0) {
 		return BUILD_STATUS_BAD_INPUT;
@@ -826,7 +827,8 @@ static BuildStatus BuildAndDump(const DataReaders& in, IDataWriter& out, const B
 	header.item = total;
 	header.item_high = total >> 32U;
 
-	const bool use_extra_mem = info.key_len + (uint32_t)info.val_len > sizeof(V96)*2+4;
+	const bool use_extra_mem = force_extra_mem
+		|| info.key_len + (uint32_t)info.val_len > sizeof(V96)*2+4;
 
 	std::vector<IndexPiece> pieces;
 	for (bool done = false; !done; ) {
@@ -1044,6 +1046,10 @@ BuildStatus BuildIndex(const DataReaders& in, IDataWriter& out, Retry retry) {
 	return BuildAndDump(in, out, {Type::INDEX_ONLY, 0, 0}, retry, nullptr);
 }
 
+BuildStatus BuildIndexFast(const DataReaders& in, IDataWriter& out, Retry retry) {
+	return BuildAndDump(in, out, {Type::INDEX_ONLY, 0, 0}, retry, nullptr, true);
+}
+
 static bool DetectKeyValueLen(const DataReaders& in, uint8_t& key_len, uint16_t* val_len) {
 	for (auto& reader : in) {
 		if (reader->total() == 0) {
@@ -1066,7 +1072,7 @@ static bool DetectKeyValueLen(const DataReaders& in, uint8_t& key_len, uint16_t*
 	return false;
 }
 
-BuildStatus BuildSet(const DataReaders& in, IDataWriter& out, Retry retry) {
+static BuildStatus BuildSet(const DataReaders& in, IDataWriter& out, Retry retry, bool force_extra_mem) {
 	uint8_t key_len;
 	if (!DetectKeyValueLen(in, key_len, nullptr)) {
 		return BUILD_STATUS_BAD_INPUT;
@@ -1074,10 +1080,18 @@ BuildStatus BuildSet(const DataReaders& in, IDataWriter& out, Retry retry) {
 	return BuildAndDump(in, out, {Type::KEY_SET, key_len, 0}, retry,
 						[](const PackView& index, const DataReaders& in, IDataWriter& out)->BuildStatus {
 							return FillInlineKeyValue(index, in, out);
-						});
+						}, force_extra_mem);
 }
 
-BuildStatus BuildDict(const DataReaders& in, IDataWriter& out, Retry retry) {
+BuildStatus BuildSet(const DataReaders& in, IDataWriter& out, Retry retry) {
+	return BuildSet(in, out, retry, false);
+}
+
+BuildStatus BuildSetFast(const DataReaders& in, IDataWriter& out, Retry retry) {
+	return BuildSet(in, out, retry, true);
+}
+
+static BuildStatus BuildDict(const DataReaders& in, IDataWriter& out, Retry retry, bool force_extra_mem) {
 	uint8_t key_len;
 	uint16_t val_len;
 	if (!DetectKeyValueLen(in, key_len, &val_len)) {
@@ -1085,11 +1099,20 @@ BuildStatus BuildDict(const DataReaders& in, IDataWriter& out, Retry retry) {
 	}
 	return BuildAndDump(in, out, {Type::KV_INLINE, key_len, val_len}, retry,
 					 [](const PackView& index, const DataReaders& in, IDataWriter& out)->BuildStatus {
-								return FillInlineKeyValue(index, in, out);
-							});
+							 return FillInlineKeyValue(index, in, out);
+						 }, force_extra_mem);
 }
 
-BuildStatus BuildDictWithVariedValue(const DataReaders& in, IDataWriter& out, Retry retry) {
+BuildStatus BuildDict(const DataReaders& in, IDataWriter& out, Retry retry) {
+	return BuildDict(in, out, retry, false);
+}
+
+BuildStatus BuildDictFast(const DataReaders& in, IDataWriter& out, Retry retry) {
+	return BuildDict(in, out, retry, true);
+}
+
+static BuildStatus BuildDictWithVariedValue(const DataReaders& in, IDataWriter& out, Retry retry,
+											 bool force_extra_mem) {
 	uint8_t key_len;
 	if (!DetectKeyValueLen(in, key_len, nullptr)) {
 		return BUILD_STATUS_BAD_INPUT;
@@ -1097,7 +1120,15 @@ BuildStatus BuildDictWithVariedValue(const DataReaders& in, IDataWriter& out, Re
 	return BuildAndDump(in, out, {Type::KV_SEPARATED, key_len, OFFSET_FIELD_SIZE}, retry,
 						[](const PackView& index, const DataReaders& in, IDataWriter& out)->BuildStatus {
 							return FillSeparatedKeyValue(index, in, out);
-						});
+						}, force_extra_mem);
+}
+
+BuildStatus BuildDictWithVariedValue(const DataReaders& in, IDataWriter& out, Retry retry) {
+	return BuildDictWithVariedValue(in, out, retry, false);
+}
+
+BuildStatus BuildDictWithVariedValueFast(const DataReaders& in, IDataWriter& out, Retry retry) {
+	return BuildDictWithVariedValue(in, out, retry, true);
 }
 
 
