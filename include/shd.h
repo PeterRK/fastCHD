@@ -50,17 +50,21 @@ static constexpr Retry DEFAULT_RETRY = {1, 4};
 using DataReaders = std::vector<std::unique_ptr<IDataReader>>;
 
 SHD_API BuildStatus BuildIndex(const DataReaders& in, IDataWriter& out, Retry retry=DEFAULT_RETRY);
+SHD_API BuildStatus BuildIndexFast(const DataReaders& in, IDataWriter& out, Retry retry=DEFAULT_RETRY);
 
 //key should have fixed length
 //dynamic length key is not useful, just pad or use checksum instead
 SHD_API BuildStatus BuildSet(const DataReaders& in, IDataWriter& out, Retry retry=DEFAULT_RETRY);
+SHD_API BuildStatus BuildSetFast(const DataReaders& in, IDataWriter& out, Retry retry=DEFAULT_RETRY);
 
 //key & value should have fixed length
 //inline large value may consume a lot of memory
 SHD_API BuildStatus BuildDict(const DataReaders& in, IDataWriter& out, Retry retry=DEFAULT_RETRY);
+SHD_API BuildStatus BuildDictFast(const DataReaders& in, IDataWriter& out, Retry retry=DEFAULT_RETRY);
 
 //key should have fixed length
 SHD_API BuildStatus BuildDictWithVariedValue(const DataReaders& in, IDataWriter& out, Retry retry=DEFAULT_RETRY);
+SHD_API BuildStatus BuildDictWithVariedValueFast(const DataReaders& in, IDataWriter& out, Retry retry=DEFAULT_RETRY);
 
 SHD_API extern bool g_trace_build_time;
 
