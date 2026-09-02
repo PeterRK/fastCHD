@@ -28,6 +28,7 @@
 //#define SHD_PACK_SIZE 4
 #include <shd.h>
 #include "common.h"
+#include "pack_format.h"
 
 namespace shd {
 
@@ -180,38 +181,9 @@ static FORCE_INLINE void ClearBit(uint8_t bitmap[], size_t pos) {
 	bitmap[pos>>3U] &= ~(1U<<(pos&7U));
 }
 
-static constexpr uint64_t L1H_MAX = 0x7fffffff;
-static constexpr uint32_t L1CELL = 5;
-static constexpr uint64_t L1TIP = L1H_MAX / L1CELL;
-
-static FORCE_INLINE constexpr uint32_t L1Size(uint32_t item) {
-	return ((uint64_t)item+(L1CELL-1))/L1CELL;
-}
-
-static FORCE_INLINE constexpr uint64_t L1Band(uint32_t item) {
-	auto l1sz = L1Size(item);
-	return (L1H_MAX*(L1H_MAX+L1TIP) + (l1sz-1)) / l1sz;
-}
-
 static FORCE_INLINE uint32_t SkewMap(uint32_t code, const Divisor<uint64_t>& band) {
 	uint64_t x = code & L1H_MAX;
 	return x*(x+L1TIP) / band;
-}
-
-static FORCE_INLINE constexpr uint64_t L2Size(uint32_t item) {
-	return ((uint64_t)item)*2U | 1U;	//up to odd
-}
-
-struct BitmapSection {
-	uint32_t b32[7];
-	uint32_t step;
-};
-static constexpr unsigned BITMAP_SECTION_SIZE = 28U * 8U;
-static FORCE_INLINE constexpr uint32_t SectionSize(uint32_t item) {
-	return (L2Size(item) + (BITMAP_SECTION_SIZE-1)) / BITMAP_SECTION_SIZE;
-}
-static FORCE_INLINE constexpr uint32_t BitmapSize(uint32_t item) {
-	return SectionSize(item) * (BITMAP_SECTION_SIZE/8U);
 }
 
 //optimize for common short cases
@@ -234,8 +206,6 @@ static FORCE_INLINE void Assign(uint8_t* dest, const uint8_t* src, uint8_t len) 
 	}
 }
 
-static constexpr uint32_t SHD_MAGIC = 0x4448537f;
-
 static constexpr uint32_t OFFSET_FIELD_SIZE = 6;
 static constexpr uint64_t MAX_OFFSET = (1ULL<<(OFFSET_FIELD_SIZE*8U))-1;
 
@@ -250,25 +220,6 @@ static FORCE_INLINE void WriteOffsetField(uint8_t* field, size_t offset) {
 
 
 using Type = PerfectHashtable::Type;
-
-struct Header {
-	uint32_t magic = SHD_MAGIC;
-	uint8_t type = Type::INDEX_ONLY;
-	uint8_t key_len = 0;
-	uint16_t val_len = 0;
-	uint32_t seed = 0;
-	uint32_t item = 0;
-	uint16_t item_high = 0;
-	uint16_t seg_cnt = 0;
-	//uint32_t parts[seg_cnt] = 0;
-
-	// uint8_t cells[]
-	// 32B align
-	// BitmapSection sections[]
-
-	// key_val[item] or key_off[item]		sizeof(key_off)-key_len is val_len
-	// separated_value[], dynamic length, length mark is embedded
-};
 
 struct SegmentView {
 	const uint8_t* cells = nullptr;

@@ -16,7 +16,7 @@
 # along with the This Library; if not, see <https:#www.gnu.org/licenses/>.
 #===============================================================================
 
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.18)
 project(fastSHD VERSION 2.1.1)
 
 include(GNUInstallDirs)
@@ -32,6 +32,7 @@ find_package(Threads REQUIRED)
 option(MODERN_CPU_ONLY "build for modern CPU only" ON)
 option(SHD_BUILD_TESTS "build tests" ON)
 option(SHD_BUILD_BENCHMARKS "build benchmarks" OFF)
+option(SHD_ENABLE_CUDA "build the CUDA query library" OFF)
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
     add_compile_options(-fno-unroll-loops)
@@ -65,12 +66,59 @@ target_link_libraries(shd PRIVATE Threads::Threads)
 target_compile_definitions(shd PRIVATE SHD_BUILDING_SHARED PUBLIC SHD_USING_SHARED)
 target_compile_definitions(shd PRIVATE $<$<CONFIG:Release>:NDEBUG>)
 
+if (SHD_ENABLE_CUDA)
+    if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+        set(CMAKE_CUDA_ARCHITECTURES "60;70;75;80;86;89;90" CACHE STRING
+            "NVIDIA GPU architectures for the CUDA query library")
+    endif()
+    enable_language(CUDA)
+    find_package(CUDAToolkit REQUIRED)
+
+    add_library(shd_cuda SHARED src/cuda/shd.cu)
+    set_target_properties(shd_cuda PROPERTIES
+        OUTPUT_NAME shd-cuda
+        CUDA_STANDARD 17
+        CUDA_STANDARD_REQUIRED ON
+        CUDA_EXTENSIONS OFF
+        CUDA_RUNTIME_LIBRARY Shared
+        CUDA_SEPARABLE_COMPILATION OFF
+        CXX_VISIBILITY_PRESET hidden
+        CUDA_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN YES
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR}
+    )
+    target_include_directories(shd_cuda PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+    target_link_libraries(shd_cuda PRIVATE CUDA::cudart)
+    target_compile_definitions(shd_cuda
+        PRIVATE SHD_CUDA_BUILDING_SHARED
+        INTERFACE SHD_CUDA_USING_SHARED
+    )
+    target_compile_definitions(shd_cuda PRIVATE $<$<CONFIG:Release>:NDEBUG>)
+endif()
+
 if (SHD_BUILD_TESTS)
     find_package(GTest REQUIRED)
     file(GLOB test_src CONFIGURE_DEPENDS test/*.cc)
     add_executable(shd-test ${test_src})
     target_link_libraries(shd-test PRIVATE Threads::Threads GTest::gtest shd)
     add_test(NAME shd-test COMMAND shd-test)
+
+    if (SHD_ENABLE_CUDA)
+        add_executable(shd-cuda-test test/test_cuda.cu test/test.cc)
+        set_target_properties(shd-cuda-test PROPERTIES
+            CUDA_STANDARD 17
+            CUDA_STANDARD_REQUIRED ON
+            CUDA_EXTENSIONS OFF
+            CUDA_RUNTIME_LIBRARY Shared
+        )
+        target_link_libraries(shd-cuda-test
+            PRIVATE Threads::Threads GTest::gtest shd shd_cuda CUDA::cudart)
+        add_test(NAME shd-cuda-test COMMAND shd-cuda-test)
+    endif()
 endif()
 
 if (SHD_BUILD_BENCHMARKS)
@@ -85,7 +133,19 @@ install(TARGETS shd
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
-install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+if (SHD_ENABLE_CUDA)
+    install(TARGETS shd_cuda
+        EXPORT fastSHDTargets
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+endif()
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    PATTERN "shd_cuda.h" EXCLUDE)
+if (SHD_ENABLE_CUDA)
+    install(FILES include/shd_cuda.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()
 
 set(fastSHD_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/fastSHD")
 configure_package_config_file(
