@@ -34,29 +34,38 @@ option(SHD_BUILD_TESTS "build tests" ON)
 option(SHD_BUILD_BENCHMARKS "build benchmarks" OFF)
 option(SHD_ENABLE_CUDA "build the CUDA query library" OFF)
 
+set(SHD_CXX_COMPILE_OPTIONS)
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
-    add_compile_options(-fno-unroll-loops)
+    list(APPEND SHD_CXX_COMPILE_OPTIONS -fno-unroll-loops)
 endif()
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    add_compile_options($<$<CONFIG:Release>:-O2>)
+    list(APPEND SHD_CXX_COMPILE_OPTIONS $<$<CONFIG:Release>:-O2>)
 elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
-    add_compile_options($<$<CONFIG:Release>:-O3>)
+    list(APPEND SHD_CXX_COMPILE_OPTIONS $<$<CONFIG:Release>:-O3>)
 endif()
 if (MODERN_CPU_ONLY AND NOT WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
     message(STATUS "fastSHD: tuning x86-64 build for Skylake or newer")
-    add_compile_options(-march=skylake)
+    list(APPEND SHD_CXX_COMPILE_OPTIONS -march=skylake)
 endif()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # Keep only the switch heuristic used by the hot lookup path.
-    add_compile_options(--param=case-values-threshold=3)
+    list(APPEND SHD_CXX_COMPILE_OPTIONS --param=case-values-threshold=3)
 endif()
 
-# Include paths are attached to targets below.
+# Private C++ tuning applies to host translation units only. CUDA compilation
+# uses its own toolchain/configuration flags, even in targets containing both.
+function(shd_apply_cxx_options target)
+    foreach(compile_option IN LISTS SHD_CXX_COMPILE_OPTIONS)
+        target_compile_options(${target} PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:${compile_option}>")
+    endforeach()
+endfunction()
 
 file(GLOB source CONFIGURE_DEPENDS src/*.cc)
 
 add_library(shd SHARED ${source})
+shd_apply_cxx_options(shd)
 target_compile_features(shd PUBLIC cxx_std_17)
 target_include_directories(shd PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -74,7 +83,8 @@ if (SHD_ENABLE_CUDA)
     enable_language(CUDA)
     find_package(CUDAToolkit REQUIRED)
 
-    add_library(shd_cuda SHARED src/cuda/shd.cu)
+    add_library(shd_cuda SHARED src/cuda/shd.cu src/cuda/shd_host.cc)
+    shd_apply_cxx_options(shd_cuda)
     set_target_properties(shd_cuda PROPERTIES
         OUTPUT_NAME shd-cuda
         CUDA_STANDARD 17
@@ -104,11 +114,13 @@ if (SHD_BUILD_TESTS)
     find_package(GTest REQUIRED)
     file(GLOB test_src CONFIGURE_DEPENDS test/*.cc)
     add_executable(shd-test ${test_src})
+    shd_apply_cxx_options(shd-test)
     target_link_libraries(shd-test PRIVATE Threads::Threads GTest::gtest shd)
     add_test(NAME shd-test COMMAND shd-test)
 
     if (SHD_ENABLE_CUDA)
         add_executable(shd-cuda-test test/test_cuda.cu test/test.cc)
+        shd_apply_cxx_options(shd-cuda-test)
         set_target_properties(shd-cuda-test PROPERTIES
             CUDA_STANDARD 17
             CUDA_STANDARD_REQUIRED ON
@@ -124,6 +136,7 @@ endif()
 if (SHD_BUILD_BENCHMARKS)
     find_package(gflags CONFIG REQUIRED)
     add_executable(bench-billion benchmark/billion.cc)
+    shd_apply_cxx_options(bench-billion)
     target_link_libraries(bench-billion PRIVATE Threads::Threads gflags::gflags shd)
 endif()
 

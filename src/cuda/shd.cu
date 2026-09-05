@@ -15,7 +15,6 @@
 #include <cstring>
 #include <limits>
 #include <new>
-#include <utility>
 #include <vector>
 
 #include <cub/device/device_select.cuh>
@@ -243,13 +242,15 @@ __device__ __forceinline__ Hash128 HashTo128(const uint8_t* message,
 	return {a, b};
 }
 
-__device__ __forceinline__ Hash128 Hash8To128(const uint8_t* message,
+template <unsigned LENGTH>
+__device__ __forceinline__ Hash128 HashShortTo128(const uint8_t* message,
 											 uint64_t seed) {
+	static_assert(LENGTH == 4 || LENGTH == 8);
 	constexpr uint64_t magic = 0xdeadbeefdeadbeefULL;
 	uint64_t a = seed;
 	uint64_t b = seed;
-	uint64_t c = magic + Load64(message);
-	uint64_t d = magic + (uint64_t{8} << 56U);
+	uint64_t c = magic + (LENGTH == 4 ? Load32(message) : Load64(message));
+	uint64_t d = magic + (uint64_t{LENGTH} << 56U);
 	End(a, b, c, d);
 	return {a, b};
 }
@@ -258,8 +259,8 @@ template <unsigned FIXED_KEY_LENGTH>
 __device__ __forceinline__ Id96 GenerateId(const DeviceTable& table,
 										 const uint8_t* key, uint8_t key_length) {
 	Hash128 hash;
-	if constexpr (FIXED_KEY_LENGTH == 8) {
-		hash = Hash8To128(key, table.seed);
+	if constexpr (FIXED_KEY_LENGTH == 4 || FIXED_KEY_LENGTH == 8) {
+		hash = HashShortTo128<FIXED_KEY_LENGTH>(key, table.seed);
 	} else {
 		hash = HashTo128(key, key_length, table.seed);
 	}
@@ -299,14 +300,14 @@ __device__ __forceinline__ uint64_t LocateOne(const DeviceTable& table,
 
 	uint32_t rank = section->step;
 	const unsigned complete_words = bit_offset >> 5U;
-	for (unsigned i = 0; i < complete_words; ++i) {
-		rank += __popc(section->b32[i]);
+	// At most six whole words precede the target word. Fixed bounds avoid
+	// nvcc expanding a variable-trip loop into a much larger instruction sequence.
+#pragma unroll
+	for (unsigned i = 0; i < BITMAP_SECTION_SIZE / 32U - 1U; ++i) {
+		rank += i < complete_words ? __popc(section->b32[i]) : 0U;
 	}
-	const unsigned remaining = bit_offset & 31U;
-	if (remaining != 0) {
-		const uint32_t mask = (uint32_t{1} << remaining) - 1U;
-		rank += __popc(section->b32[complete_words] & mask);
-	}
+	const uint32_t mask = (uint32_t{1} << (bit_offset & 31U)) - 1U;
+	rank += __popc(section->b32[complete_words] & mask);
 	return segment.item_offset + rank;
 }
 
@@ -323,7 +324,9 @@ __device__ __forceinline__ bool EqualBytes(const uint8_t* a, const uint8_t* b,
 template <unsigned FIXED_KEY_LENGTH>
 __device__ __forceinline__ bool EqualKey(const uint8_t* a, const uint8_t* b,
 										 uint8_t key_length) {
-	if constexpr (FIXED_KEY_LENGTH == 8) {
+	if constexpr (FIXED_KEY_LENGTH == 4) {
+		return Load32(a) == Load32(b);
+	} else if constexpr (FIXED_KEY_LENGTH == 8) {
 		return Load64(a) == Load64(b);
 	} else {
 		return EqualBytes(a, b, key_length);
@@ -337,6 +340,13 @@ __device__ __forceinline__ void CopyBytes(uint8_t* __restrict destination,
 	const uintptr_t alignment =
 		reinterpret_cast<uintptr_t>(destination)
 		| reinterpret_cast<uintptr_t>(source);
+	// Copy a vector prefix when aligned; the scalar paths finish the tail.
+	if (length >= sizeof(uint4) && (alignment & (alignof(uint4) - 1U)) == 0) {
+		for (; offset + sizeof(uint4) <= length; offset += sizeof(uint4)) {
+			*reinterpret_cast<uint4*>(destination + offset) =
+				*reinterpret_cast<const uint4*>(source + offset);
+		}
+	}
 	if ((alignment & (alignof(uint64_t) - 1U)) == 0) {
 		for (; offset + sizeof(uint64_t) <= length; offset += sizeof(uint64_t)) {
 			*reinterpret_cast<uint64_t*>(destination + offset) =
@@ -701,7 +711,10 @@ Result BatchLocateAsync(const Table* table, unsigned batch, const uint8_t* keys,
 	if (batch == 0) {
 		return {};
 	}
-	if (key_length == 8) {
+	if (key_length == 4) {
+		LocateKernel<4><<<GridSize(batch), BLOCK_SIZE, 0, stream>>>(
+			table->device_view, batch, keys, key_length, output);
+	} else if (key_length == 8) {
 		LocateKernel<8><<<GridSize(batch), BLOCK_SIZE, 0, stream>>>(
 			table->device_view, batch, keys, key_length, output);
 	} else {
@@ -735,13 +748,19 @@ Result BatchCheckAsync(const Table* table, unsigned batch, const uint8_t* keys,
 		return {};
 	}
 	if (device_hit_count != nullptr) {
-		if (table->info.key_length == 8) {
+		if (table->info.key_length == 4) {
+			CheckKernel<4, true><<<GridSize(batch), BLOCK_SIZE, 0, stream>>>(
+				table->device_view, batch, keys, hit_flags, device_hit_count);
+		} else if (table->info.key_length == 8) {
 			CheckKernel<8, true><<<GridSize(batch), BLOCK_SIZE, 0, stream>>>(
 				table->device_view, batch, keys, hit_flags, device_hit_count);
 		} else {
 			CheckKernel<0, true><<<GridSize(batch), BLOCK_SIZE, 0, stream>>>(
 				table->device_view, batch, keys, hit_flags, device_hit_count);
 		}
+	} else if (table->info.key_length == 4) {
+		CheckKernel<4, false><<<GridSize(batch), BLOCK_SIZE, 0, stream>>>(
+			table->device_view, batch, keys, hit_flags, nullptr);
 	} else if (table->info.key_length == 8) {
 		CheckKernel<8, false><<<GridSize(batch), BLOCK_SIZE, 0, stream>>>(
 			table->device_view, batch, keys, hit_flags, nullptr);
@@ -776,7 +795,11 @@ Result BatchFetchAsync(const Table* table, unsigned batch, const uint8_t* keys,
 		return {};
 	}
 	if (device_hit_count != nullptr) {
-		if (table->info.key_length == 8) {
+		if (table->info.key_length == 4) {
+			FetchKernel<4, true, false><<<GridSize(batch), BLOCK_SIZE, 0, stream>>>(
+				table->device_view, batch, keys, data, default_value, hit_flags,
+				device_hit_count);
+		} else if (table->info.key_length == 8) {
 			FetchKernel<8, true, false><<<GridSize(batch), BLOCK_SIZE, 0, stream>>>(
 				table->device_view, batch, keys, data, default_value, hit_flags,
 				device_hit_count);
@@ -785,6 +808,9 @@ Result BatchFetchAsync(const Table* table, unsigned batch, const uint8_t* keys,
 				table->device_view, batch, keys, data, default_value, hit_flags,
 				device_hit_count);
 		}
+	} else if (table->info.key_length == 4) {
+		FetchKernel<4, false, false><<<GridSize(batch), BLOCK_SIZE, 0, stream>>>(
+			table->device_view, batch, keys, data, default_value, hit_flags, nullptr);
 	} else if (table->info.key_length == 8) {
 		FetchKernel<8, false, false><<<GridSize(batch), BLOCK_SIZE, 0, stream>>>(
 			table->device_view, batch, keys, data, default_value, hit_flags, nullptr);
@@ -812,7 +838,11 @@ Result BatchTryFetchAsync(const Table* table, TryFetchWorkspace* workspace,
 	}
 	if (batch == 0) return CudaResult(cudaMemsetAsync(
 		miss_count, 0, sizeof(unsigned), stream));
-	if (table->info.key_length == 8) {
+	if (table->info.key_length == 4) {
+		FetchKernel<4, false, true><<<GridSize(batch), BLOCK_SIZE, 0, stream>>>(
+			table->device_view, batch, keys, data, nullptr,
+			workspace->miss_flags, nullptr);
+	} else if (table->info.key_length == 8) {
 		FetchKernel<8, false, true><<<GridSize(batch), BLOCK_SIZE, 0, stream>>>(
 			table->device_view, batch, keys, data, nullptr,
 			workspace->miss_flags, nullptr);
@@ -830,388 +860,3 @@ Result BatchTryFetchAsync(const Table* table, TryFetchWorkspace* workspace,
 }
 
 } // namespace shd::cuda::detail
-
-namespace shd::cuda {
-
-struct PerfectHashtable::Impl {
-	detail::Table* table = nullptr;
-	detail::TableInfo info;
-	cudaStream_t stream = nullptr;
-	Status last_status = Status::INVALID_ARGUMENT;
-	cudaError_t last_cuda_error = cudaSuccess;
-	uint8_t* device_staging = nullptr;
-	uint8_t* host_staging = nullptr;
-	size_t staging_capacity = 0;
-	detail::TryFetchWorkspace* try_fetch_workspace = nullptr;
-	unsigned try_fetch_capacity = 0;
-
-	~Impl() noexcept {
-		detail::DestroyTryFetchWorkspace(try_fetch_workspace);
-		if (host_staging != nullptr) cudaFreeHost(host_staging);
-		if (device_staging != nullptr) cudaFree(device_staging);
-		detail::Detach(table);
-	}
-};
-
-namespace {
-
-template <typename ImplT>
-void StoreResult(ImplT* impl, Status status,
-				 cudaError_t cuda_error = cudaSuccess) noexcept {
-	if (impl != nullptr) {
-		impl->last_cuda_error = cuda_error;
-		impl->last_status = status;
-	}
-}
-
-Status CudaStatus(cudaError_t error) noexcept {
-	if (error == cudaSuccess) {
-		return Status::OK;
-	}
-	return error == cudaErrorMemoryAllocation ? Status::OUT_OF_MEMORY : Status::CUDA_ERROR;
-}
-
-detail::Result ToResult(cudaError_t error) noexcept {
-	return {CudaStatus(error), error};
-}
-
-template <typename ImplT>
-detail::Result UploadStaging(ImplT* impl, size_t bytes) noexcept {
-	return ToResult(cudaMemcpyAsync(impl->device_staging, impl->host_staging,
-		bytes, cudaMemcpyHostToDevice, impl->stream));
-}
-
-template <typename ImplT>
-detail::Result DownloadStaging(ImplT* impl, size_t offset,
-							   size_t bytes) noexcept {
-	auto result = ToResult(cudaMemcpyAsync(impl->host_staging + offset,
-		impl->device_staging + offset, bytes, cudaMemcpyDeviceToHost,
-		impl->stream));
-	if (result) {
-		result = ToResult(cudaStreamSynchronize(impl->stream));
-	}
-	return result;
-}
-
-constexpr size_t AlignUp(size_t value, size_t alignment) noexcept {
-	return (value + alignment - 1U) & ~(alignment - 1U);
-}
-
-template <typename ImplT>
-bool ReserveStaging(ImplT* impl, size_t bytes) noexcept {
-	if (bytes <= impl->staging_capacity) {
-		return true;
-	}
-
-	uint8_t* new_device = nullptr;
-	uint8_t* new_host = nullptr;
-	auto error = cudaMalloc(reinterpret_cast<void**>(&new_device), bytes);
-	if (error == cudaSuccess) {
-		error = cudaMemsetAsync(new_device, 0, bytes, impl->stream);
-	}
-	if (error == cudaSuccess) {
-		error = cudaMallocHost(reinterpret_cast<void**>(&new_host), bytes);
-	}
-	if (error != cudaSuccess) {
-		if (new_host != nullptr) cudaFreeHost(new_host);
-		if (new_device != nullptr) cudaFree(new_device);
-		StoreResult(impl, CudaStatus(error), error);
-		return false;
-	}
-
-	if (impl->host_staging != nullptr) cudaFreeHost(impl->host_staging);
-	if (impl->device_staging != nullptr) cudaFree(impl->device_staging);
-	impl->host_staging = new_host;
-	impl->device_staging = new_device;
-	impl->staging_capacity = bytes;
-	return true;
-}
-
-template <typename ImplT>
-bool ReserveTryFetchWorkspace(ImplT* impl, unsigned capacity) noexcept {
-	if (capacity <= impl->try_fetch_capacity) return true;
-	detail::TryFetchWorkspace* workspace = nullptr;
-	const auto result = detail::CreateTryFetchWorkspace(
-		capacity, impl->stream, &workspace);
-	if (!result) {
-		StoreResult(impl, result.status, result.cuda_error);
-		return false;
-	}
-	detail::DestroyTryFetchWorkspace(impl->try_fetch_workspace);
-	impl->try_fetch_workspace = workspace;
-	impl->try_fetch_capacity = capacity;
-	return true;
-}
-
-} // namespace
-
-PerfectHashtable::PerfectHashtable(const uint8_t* device_pack, size_t pack_size,
-								   cudaStream_t stream) noexcept {
-	m_impl = new (std::nothrow) Impl;
-	if (m_impl == nullptr) {
-		return;
-	}
-	m_impl->stream = stream;
-	auto result = detail::Attach(device_pack, pack_size, stream, &m_impl->table);
-	if (result) {
-		m_impl->info = detail::GetTableInfo(m_impl->table);
-	}
-	StoreResult(m_impl, result.status, result.cuda_error);
-}
-
-PerfectHashtable::~PerfectHashtable() noexcept {
-	delete m_impl;
-}
-
-PerfectHashtable::PerfectHashtable(PerfectHashtable&& other) noexcept
-	: m_impl(std::exchange(other.m_impl, nullptr)) {}
-
-PerfectHashtable& PerfectHashtable::operator=(PerfectHashtable&& other) noexcept {
-	if (this != &other) {
-		this->~PerfectHashtable();
-		new (this) PerfectHashtable(std::move(other));
-	}
-	return *this;
-}
-
-bool PerfectHashtable::operator!() const noexcept {
-	return m_impl == nullptr || m_impl->table == nullptr;
-}
-
-PerfectHashtable::Type PerfectHashtable::type() const noexcept {
-	return !*this ? ILLEGAL_TYPE : m_impl->info.type;
-}
-
-uint8_t PerfectHashtable::key_len() const noexcept {
-	return !*this ? 0 : m_impl->info.key_length;
-}
-
-uint16_t PerfectHashtable::val_len() const noexcept {
-	return !*this ? 0 : m_impl->info.value_length;
-}
-
-size_t PerfectHashtable::item() const noexcept {
-	return !*this ? 0 : static_cast<size_t>(m_impl->info.item_count);
-}
-
-cudaStream_t PerfectHashtable::stream() const noexcept {
-	return m_impl == nullptr ? nullptr : m_impl->stream;
-}
-
-void PerfectHashtable::set_stream(cudaStream_t stream) noexcept {
-	if (m_impl != nullptr) {
-		m_impl->stream = stream;
-	}
-}
-
-Status PerfectHashtable::status() const noexcept {
-	return m_impl == nullptr
-		? Status::OUT_OF_MEMORY
-		: m_impl->last_status;
-}
-
-int PerfectHashtable::cuda_error() const noexcept {
-	return m_impl == nullptr
-		? static_cast<int>(cudaErrorMemoryAllocation)
-		: static_cast<int>(m_impl->last_cuda_error);
-}
-
-void PerfectHashtable::batch_locate(unsigned batch, const uint8_t* keys,
-									uint8_t key_length, uint64_t* output) {
-	if (m_impl == nullptr || m_impl->table == nullptr) {
-		return;
-	}
-	if (key_length == 0
-		|| (m_impl->info.type != INDEX_ONLY && key_length != m_impl->info.key_length)
-		|| (batch != 0 && (keys == nullptr || output == nullptr))) {
-		StoreResult(m_impl, Status::INVALID_ARGUMENT);
-		return;
-	}
-	if (batch == 0) {
-		StoreResult(m_impl, Status::OK);
-		return;
-	}
-
-	const size_t key_bytes = static_cast<size_t>(batch) * key_length;
-	const size_t output_offset = AlignUp(key_bytes, alignof(uint64_t));
-	const size_t output_bytes = static_cast<size_t>(batch) * sizeof(uint64_t);
-	if (!ReserveStaging(m_impl, output_offset + output_bytes)) {
-		return;
-	}
-	std::memcpy(m_impl->host_staging, keys, key_bytes);
-	auto result = UploadStaging(m_impl, key_bytes);
-	if (result) {
-		result = detail::BatchLocateAsync(m_impl->table, batch,
-			m_impl->device_staging, key_length,
-			reinterpret_cast<uint64_t*>(m_impl->device_staging + output_offset),
-			m_impl->stream);
-	}
-	if (result) {
-		result = DownloadStaging(m_impl, output_offset, output_bytes);
-	}
-	if (result) {
-		std::memcpy(output, m_impl->host_staging + output_offset, output_bytes);
-	}
-	StoreResult(m_impl, result.status, result.cuda_error);
-}
-
-unsigned PerfectHashtable::batch_check(unsigned batch, const uint8_t* keys,
-									   bool* output) const noexcept {
-	if (m_impl == nullptr || m_impl->table == nullptr) {
-		return 0;
-	}
-	if (m_impl->info.type != KEY_SET && m_impl->info.type != KV_INLINE) {
-		StoreResult(m_impl, Status::UNSUPPORTED_TYPE);
-		return 0;
-	}
-	if (batch == 0) {
-		StoreResult(m_impl, Status::OK);
-		return 0;
-	}
-	if (keys == nullptr || output == nullptr) {
-		StoreResult(m_impl, Status::INVALID_ARGUMENT);
-		return 0;
-	}
-
-	const size_t key_bytes = static_cast<size_t>(batch) * m_impl->info.key_length;
-	const size_t flags_offset = key_bytes;
-	const size_t flags_bytes = static_cast<size_t>(batch) * sizeof(bool);
-	const size_t count_offset = AlignUp(flags_offset + flags_bytes, alignof(unsigned));
-	if (!ReserveStaging(m_impl, count_offset + sizeof(unsigned))) {
-		return 0;
-	}
-	std::memcpy(m_impl->host_staging, keys, key_bytes);
-	auto result = UploadStaging(m_impl, key_bytes);
-	if (result) {
-		result = detail::BatchCheckAsync(m_impl->table, batch,
-			m_impl->device_staging,
-			reinterpret_cast<bool*>(m_impl->device_staging + flags_offset),
-			reinterpret_cast<unsigned*>(m_impl->device_staging + count_offset),
-			m_impl->stream);
-	}
-	if (result) {
-		result = DownloadStaging(m_impl, flags_offset,
-			count_offset + sizeof(unsigned) - flags_offset);
-	}
-	unsigned hits = 0;
-	if (result) {
-		std::memcpy(output, m_impl->host_staging + flags_offset, flags_bytes);
-		std::memcpy(&hits, m_impl->host_staging + count_offset, sizeof(hits));
-	}
-	StoreResult(m_impl, result.status, result.cuda_error);
-	return result ? hits : 0;
-}
-
-unsigned PerfectHashtable::batch_fetch(unsigned batch, const uint8_t* keys,
-									   uint8_t* data,
-									   const uint8_t* default_value) const noexcept {
-	if (m_impl == nullptr || m_impl->table == nullptr) {
-		return 0;
-	}
-	if (m_impl->info.type != KV_INLINE) {
-		StoreResult(m_impl, Status::UNSUPPORTED_TYPE);
-		return 0;
-	}
-	if (batch == 0) {
-		StoreResult(m_impl, Status::OK);
-		return 0;
-	}
-	if (keys == nullptr || data == nullptr || default_value == nullptr) {
-		StoreResult(m_impl, Status::INVALID_ARGUMENT);
-		return 0;
-	}
-
-	const size_t key_bytes = static_cast<size_t>(batch) * m_impl->info.key_length;
-	const size_t default_offset = key_bytes;
-	const size_t input_end = default_offset + m_impl->info.value_length;
-	const size_t data_offset = AlignUp(input_end, alignof(uint64_t));
-	const size_t data_bytes = static_cast<size_t>(batch) * m_impl->info.value_length;
-	const size_t count_offset = AlignUp(data_offset + data_bytes, alignof(unsigned));
-	if (!ReserveStaging(m_impl, count_offset + sizeof(unsigned))) {
-		return 0;
-	}
-	std::memcpy(m_impl->host_staging, keys, key_bytes);
-	std::memcpy(m_impl->host_staging + default_offset,
-		default_value, m_impl->info.value_length);
-	auto result = UploadStaging(m_impl, input_end);
-	if (result) {
-		result = detail::BatchFetchAsync(m_impl->table, batch,
-			m_impl->device_staging, m_impl->device_staging + data_offset,
-			m_impl->device_staging + default_offset, nullptr,
-			reinterpret_cast<unsigned*>(m_impl->device_staging + count_offset),
-			m_impl->stream);
-	}
-	if (result) {
-		result = DownloadStaging(m_impl, data_offset,
-			count_offset + sizeof(unsigned) - data_offset);
-	}
-	unsigned hits = 0;
-	if (result) {
-		std::memcpy(data, m_impl->host_staging + data_offset, data_bytes);
-		std::memcpy(&hits, m_impl->host_staging + count_offset, sizeof(hits));
-	}
-	StoreResult(m_impl, result.status, result.cuda_error);
-	return result ? hits : 0;
-}
-
-unsigned PerfectHashtable::batch_try_fetch(unsigned batch, const uint8_t* keys,
-										   uint8_t* data,
-										   unsigned* miss) const noexcept {
-	if (m_impl == nullptr || m_impl->table == nullptr) {
-		return 0;
-	}
-	if (m_impl->info.type != KV_INLINE) {
-		StoreResult(m_impl, Status::UNSUPPORTED_TYPE);
-		return 0;
-	}
-	if (batch == 0) {
-		StoreResult(m_impl, Status::OK);
-		return 0;
-	}
-	if (batch > static_cast<unsigned>(INT_MAX) || keys == nullptr
-		|| data == nullptr || miss == nullptr) {
-		StoreResult(m_impl, Status::INVALID_ARGUMENT);
-		return 0;
-	}
-	const size_t key_bytes = static_cast<size_t>(batch) * m_impl->info.key_length;
-	const size_t data_offset = AlignUp(key_bytes, alignof(uint64_t));
-	const size_t data_bytes = static_cast<size_t>(batch) * m_impl->info.value_length;
-	const size_t miss_offset = AlignUp(data_offset + data_bytes, alignof(unsigned));
-	const size_t miss_bytes = static_cast<size_t>(batch) * sizeof(unsigned);
-	const size_t count_offset = miss_offset + miss_bytes;
-	if (!ReserveStaging(m_impl, count_offset + sizeof(unsigned))
-		|| !ReserveTryFetchWorkspace(m_impl, batch)) {
-		return 0;
-	}
-	auto* device_misses =
-		reinterpret_cast<unsigned*>(m_impl->device_staging + miss_offset);
-	auto* device_count =
-		reinterpret_cast<unsigned*>(m_impl->device_staging + count_offset);
-
-	std::memcpy(m_impl->host_staging, keys, key_bytes);
-	auto result = UploadStaging(m_impl, key_bytes);
-	if (result) {
-		result = detail::BatchTryFetchAsync(m_impl->table,
-			m_impl->try_fetch_workspace, batch, m_impl->device_staging,
-			m_impl->device_staging + data_offset, device_misses, device_count,
-			m_impl->stream);
-	}
-	if (result) {
-		result = DownloadStaging(m_impl, data_offset,
-			count_offset + sizeof(unsigned) - data_offset);
-	}
-	unsigned misses = 0;
-	if (result) {
-		std::memcpy(&misses, m_impl->host_staging + count_offset, sizeof(misses));
-		if (misses > batch) {
-			result = {Status::CUDA_ERROR, cudaErrorUnknown};
-		} else {
-			std::memcpy(data, m_impl->host_staging + data_offset, data_bytes);
-			std::memcpy(miss, m_impl->host_staging + miss_offset, miss_bytes);
-		}
-	}
-	StoreResult(m_impl, result.status, result.cuda_error);
-	return result ? batch - misses : 0;
-}
-
-} // namespace shd::cuda

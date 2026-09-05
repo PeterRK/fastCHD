@@ -64,8 +64,9 @@ public:
 	Status status() const noexcept;
 	int cuda_error() const noexcept;
 
-	// Host-memory batch API. The wrapper stages transfers on the bound stream and
-	// synchronizes it before return.
+	// Host-memory batch API. Large batches may use a private stream and two
+	// staging buffers to overlap chunks. All work observes prior operations on
+	// the bound stream; both streams finish before return.
 	void batch_locate(unsigned batch, const uint8_t* __restrict keys,
 					  uint8_t key_len, uint64_t* __restrict out);
 

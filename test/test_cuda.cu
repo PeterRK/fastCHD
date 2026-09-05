@@ -167,8 +167,9 @@ private:
 
 class FixedValueReader final : public shd::IDataReader {
 public:
-	FixedValueReader(uint16_t value_length, unsigned count)
-		: m_value_length(value_length), m_count(count) {}
+	FixedValueReader(uint16_t value_length, unsigned count, uint8_t key_length = 8)
+		: m_value_length(value_length), m_count(count), m_key_length(key_length),
+		  m_value(value_length) {}
 
 	void reset() override {
 		m_position = 0;
@@ -184,17 +185,18 @@ public:
 			m_value[i] = static_cast<uint8_t>(m_key * 29U + i * 17U);
 		}
 		return {
-			{reinterpret_cast<const uint8_t*>(&m_key), sizeof(m_key)},
-			key_only ? shd::Slice{} : shd::Slice{m_value, m_value_length}
+			{reinterpret_cast<const uint8_t*>(&m_key), m_key_length},
+			key_only ? shd::Slice{} : shd::Slice{m_value.data(), m_value_length}
 		};
 	}
 
 private:
 	uint16_t m_value_length;
 	unsigned m_count;
+	uint8_t m_key_length;
 	unsigned m_position = 0;
 	uint64_t m_key = 0;
-	uint8_t m_value[65]{};
+	std::vector<uint8_t> m_value;
 };
 
 TEST(SHDCuda, FetchArbitraryValueLengthsAndAlignment) {
@@ -240,6 +242,280 @@ TEST(SHDCuda, FetchArbitraryValueLengthsAndAlignment) {
 						static_cast<uint8_t>(i * 29U + j * 17U));
 				}
 			}
+		}
+	}
+}
+
+TEST(SHDCuda, ShortKeyFetchWithPartialBlocksAndUnalignedKeys) {
+	if (!HasCudaDevice()) GTEST_SKIP() << "CUDA device unavailable";
+	constexpr unsigned capacity = 1025;
+	Stream stream;
+	ASSERT_EQ(stream.error(), cudaSuccess);
+	for (uint8_t key_length : {4, 8}) {
+		for (uint16_t value_length : {7, 32}) {
+			SCOPED_TRACE(static_cast<unsigned>(key_length));
+			SCOPED_TRACE(value_length);
+			VectorWriter writer;
+			shd::DataReaders readers;
+			readers.push_back(std::make_unique<FixedValueReader>(value_length, capacity, key_length));
+			ASSERT_EQ(shd::BuildDict(readers, writer), shd::BUILD_STATUS_OK);
+			auto cpu = MakeCpuTable(writer.bytes);
+			ASSERT_FALSE(!*cpu);
+			DeviceBuffer<uint8_t> pack, keys, values, default_value;
+			DeviceBuffer<bool> flags;
+			DeviceBuffer<unsigned> hit_count;
+			ASSERT_EQ(pack.allocate(writer.bytes.size()), cudaSuccess);
+			ASSERT_EQ(keys.allocate(capacity * key_length + 1), cudaSuccess);
+			ASSERT_EQ(values.allocate(capacity * value_length), cudaSuccess);
+			ASSERT_EQ(default_value.allocate(value_length), cudaSuccess);
+			ASSERT_EQ(flags.allocate(capacity), cudaSuccess);
+			ASSERT_EQ(hit_count.allocate(1), cudaSuccess);
+			ASSERT_EQ(cudaMemcpyAsync(pack.get(), writer.bytes.data(), writer.bytes.size(),
+				cudaMemcpyHostToDevice, stream.get()), cudaSuccess);
+			shd::cuda::detail::Table* raw = nullptr;
+			ASSERT_TRUE(shd::cuda::detail::Attach(pack.get(), writer.bytes.size(), stream.get(), &raw));
+			std::unique_ptr<shd::cuda::detail::Table, decltype(&shd::cuda::detail::Detach)>
+				table(raw, shd::cuda::detail::Detach);
+			std::vector<uint8_t> host_keys(capacity * key_length), actual(capacity * value_length), expected(actual.size());
+			std::vector<uint8_t> dft(value_length, 0xe7);
+			auto actual_flags = std::make_unique<bool[]>(capacity);
+			for (unsigned i = 0; i < capacity; ++i) {
+				const uint64_t key = i % 3U == 0 ? capacity + i : i;
+				std::memcpy(host_keys.data() + i * key_length, &key, key_length);
+			}
+			ASSERT_EQ(cudaMemcpyAsync(keys.get() + 1, host_keys.data(), host_keys.size(),
+				cudaMemcpyHostToDevice, stream.get()), cudaSuccess);
+			ASSERT_EQ(cudaMemcpyAsync(default_value.get(), dft.data(), dft.size(),
+				cudaMemcpyHostToDevice, stream.get()), cudaSuccess);
+			for (unsigned n : {1U, 31U, 32U, 33U, 255U, 256U, 257U, capacity}) {
+				SCOPED_TRACE(n);
+				const unsigned expected_hits = cpu->batch_fetch(n, host_keys.data(), expected.data(), dft.data());
+				ASSERT_TRUE(shd::cuda::detail::BatchFetchAsync(table.get(), n, keys.get() + 1,
+					values.get(), default_value.get(), flags.get(), hit_count.get(), stream.get()));
+				ASSERT_EQ(cudaStreamSynchronize(stream.get()), cudaSuccess);
+				unsigned hits = 0;
+				ASSERT_EQ(cudaMemcpy(&hits, hit_count.get(), sizeof(hits), cudaMemcpyDeviceToHost), cudaSuccess);
+				ASSERT_EQ(cudaMemcpy(actual.data(), values.get(), n * value_length, cudaMemcpyDeviceToHost), cudaSuccess);
+				ASSERT_EQ(cudaMemcpy(actual_flags.get(), flags.get(), n, cudaMemcpyDeviceToHost), cudaSuccess);
+				EXPECT_EQ(hits, expected_hits);
+				EXPECT_EQ(std::memcmp(actual.data(), expected.data(), n * value_length), 0);
+				for (unsigned i = 0; i < n; ++i) EXPECT_EQ(actual_flags[i], i % 3U != 0);
+			}
+		}
+	}
+}
+
+TEST(SHDCuda, DeviceValueCopyHandlesAlignmentAndTails) {
+	if (!HasCudaDevice()) GTEST_SKIP() << "CUDA device unavailable";
+	constexpr unsigned capacity = 257;
+	Stream stream;
+	ASSERT_EQ(stream.error(), cudaSuccess);
+	for (uint8_t key_length : {4, 8}) {
+		for (uint16_t value_length : {15, 16, 17, 24, 31, 32, 33, 64, 65, 96, 128, 256, 1024}) {
+			SCOPED_TRACE(static_cast<unsigned>(key_length));
+			SCOPED_TRACE(value_length);
+			VectorWriter writer;
+			shd::DataReaders readers;
+			readers.push_back(std::make_unique<FixedValueReader>(value_length, capacity, key_length));
+			ASSERT_EQ(shd::BuildDict(readers, writer), shd::BUILD_STATUS_OK);
+			auto cpu = MakeCpuTable(writer.bytes);
+			ASSERT_FALSE(!*cpu);
+			DeviceBuffer<uint8_t> pack, keys, values, default_value;
+			DeviceBuffer<bool> flags;
+			DeviceBuffer<unsigned> hit_count;
+			ASSERT_EQ(pack.allocate(writer.bytes.size()), cudaSuccess);
+			ASSERT_EQ(keys.allocate(capacity * key_length + 1), cudaSuccess);
+			ASSERT_EQ(values.allocate(capacity * value_length + 16), cudaSuccess);
+			ASSERT_EQ(default_value.allocate(value_length + 16), cudaSuccess);
+			ASSERT_EQ(flags.allocate(capacity), cudaSuccess);
+			ASSERT_EQ(hit_count.allocate(1), cudaSuccess);
+			ASSERT_EQ(cudaMemcpyAsync(pack.get(), writer.bytes.data(), writer.bytes.size(),
+				cudaMemcpyHostToDevice, stream.get()), cudaSuccess);
+			shd::cuda::detail::Table* raw = nullptr;
+			ASSERT_TRUE(shd::cuda::detail::Attach(pack.get(), writer.bytes.size(), stream.get(), &raw));
+			std::unique_ptr<shd::cuda::detail::Table, decltype(&shd::cuda::detail::Detach)>
+				table(raw, shd::cuda::detail::Detach);
+			std::vector<uint8_t> host_keys(capacity * key_length), actual(capacity * value_length), expected(actual.size());
+			std::vector<uint8_t> dft(value_length, 0xe7);
+			auto actual_flags = std::make_unique<bool[]>(capacity);
+			for (unsigned i = 0; i < capacity; ++i) {
+				const uint64_t key = i % 3U == 0 ? capacity + i : i;
+				std::memcpy(host_keys.data() + i * key_length, &key, key_length);
+			}
+			ASSERT_EQ(cudaMemcpyAsync(keys.get() + 1, host_keys.data(), host_keys.size(),
+				cudaMemcpyHostToDevice, stream.get()), cudaSuccess);
+			for (unsigned output_offset : {0U, 1U, 4U, 8U, 16U}) {
+				SCOPED_TRACE(output_offset);
+				ASSERT_EQ(cudaMemcpyAsync(default_value.get() + output_offset, dft.data(), dft.size(),
+					cudaMemcpyHostToDevice, stream.get()), cudaSuccess);
+				for (unsigned n : {1U, 31U, 32U, 33U, 255U, 256U, capacity}) {
+					SCOPED_TRACE(n);
+					const unsigned expected_hits = cpu->batch_fetch(n, host_keys.data(), expected.data(), dft.data());
+					ASSERT_TRUE(shd::cuda::detail::BatchFetchAsync(table.get(), n, keys.get() + 1,
+						values.get() + output_offset, default_value.get() + output_offset, flags.get(), hit_count.get(), stream.get()));
+					ASSERT_EQ(cudaStreamSynchronize(stream.get()), cudaSuccess);
+					unsigned hits = 0;
+					ASSERT_EQ(cudaMemcpy(&hits, hit_count.get(), sizeof(hits), cudaMemcpyDeviceToHost), cudaSuccess);
+					ASSERT_EQ(cudaMemcpy(actual.data(), values.get() + output_offset, n * value_length, cudaMemcpyDeviceToHost), cudaSuccess);
+					ASSERT_EQ(cudaMemcpy(actual_flags.get(), flags.get(), n, cudaMemcpyDeviceToHost), cudaSuccess);
+					EXPECT_EQ(hits, expected_hits);
+					EXPECT_EQ(std::memcmp(actual.data(), expected.data(), n * value_length), 0);
+					for (unsigned i = 0; i < n; ++i) EXPECT_EQ(actual_flags[i], i % 3U != 0);
+				}
+			}
+		}
+	}
+}
+
+TEST(SHDCuda, HostPipelinePreservesBatchOrderAndStreamChanges) {
+	if (!HasCudaDevice()) GTEST_SKIP() << "CUDA device unavailable";
+	constexpr unsigned capacity = 5U * 32768U + 17U;
+	constexpr unsigned items = 1025;
+	Stream first, second;
+	ASSERT_EQ(first.error(), cudaSuccess);
+	ASSERT_EQ(second.error(), cudaSuccess);
+	for (uint8_t key_length : {4, 8}) {
+		for (uint16_t value_length : {7, 32}) {
+			SCOPED_TRACE(static_cast<unsigned>(key_length));
+			SCOPED_TRACE(value_length);
+			VectorWriter writer;
+			shd::DataReaders readers;
+			readers.push_back(std::make_unique<FixedValueReader>(value_length, items, key_length));
+			ASSERT_EQ(shd::BuildDict(readers, writer), shd::BUILD_STATUS_OK);
+			auto cpu = MakeCpuTable(writer.bytes);
+			ASSERT_FALSE(!*cpu);
+			DeviceBuffer<uint8_t> pack;
+			ASSERT_EQ(pack.allocate(writer.bytes.size()), cudaSuccess);
+			ASSERT_EQ(cudaMemcpyAsync(pack.get(), writer.bytes.data(), writer.bytes.size(),
+				cudaMemcpyHostToDevice, first.get()), cudaSuccess);
+			shd::cuda::PerfectHashtable gpu(pack.get(), writer.bytes.size(), first.get());
+			ASSERT_FALSE(!gpu);
+			std::vector<uint8_t> keys(capacity * key_length + 1);
+			std::vector<uint8_t> actual(capacity * value_length + 1), expected(actual.size());
+			std::vector<uint8_t> dft(value_length, 0xe7);
+			std::vector<uint64_t> positions(capacity), expected_positions(capacity);
+			std::vector<unsigned> misses(capacity), expected_misses(capacity);
+			auto flags = std::make_unique<bool[]>(capacity);
+			for (unsigned pattern : {0U, 1U, 2U}) {
+				for (unsigned i = 0; i < capacity; ++i) {
+					const bool hit = pattern == 0 || (pattern == 1 && i % 3U != 0);
+					const uint64_t key = i % items + (hit ? 0U : items);
+					std::memcpy(keys.data() + 1 + i * key_length, &key, key_length);
+				}
+				for (unsigned n : {65535U, 65536U, 65537U, capacity, 33U}) {
+					SCOPED_TRACE(pattern);
+					SCOPED_TRACE(n);
+					// Reuse both slots/workspaces, then switch back to the single-stream path.
+					const auto stream = n % 3U == 0 ? nullptr : n % 3U == 1 ? first.get() : second.get();
+					gpu.set_stream(stream);
+					EXPECT_EQ(gpu.stream(), stream);
+					const auto* input = keys.data() + 1;
+					const unsigned hits = cpu->batch_fetch(n, input, expected.data(), dft.data());
+					cpu->batch_locate(n, input, key_length, expected_positions.data());
+					gpu.batch_locate(n, input, key_length, positions.data());
+					ASSERT_EQ(gpu.status(), shd::cuda::Status::OK);
+					ASSERT_TRUE(std::equal(positions.begin(), positions.begin() + n, expected_positions.begin()));
+					ASSERT_EQ(gpu.batch_check(n, input, flags.get()), hits);
+					ASSERT_EQ(gpu.status(), shd::cuda::Status::OK);
+					for (unsigned i = 0; i < n; ++i) {
+						ASSERT_EQ(flags[i], pattern == 0 || (pattern == 1 && i % 3U != 0));
+					}
+					ASSERT_EQ(gpu.batch_fetch(n, input, actual.data() + 1, dft.data()), hits);
+					ASSERT_EQ(gpu.status(), shd::cuda::Status::OK);
+					ASSERT_EQ(std::memcmp(actual.data() + 1, expected.data(), n * value_length), 0);
+					ASSERT_EQ(cpu->batch_try_fetch(n, input, expected.data(), expected_misses.data()), hits);
+					std::fill(actual.begin(), actual.end(), 0xcc);
+					ASSERT_EQ(gpu.batch_try_fetch(n, input, actual.data() + 1, misses.data()), hits);
+					ASSERT_EQ(gpu.status(), shd::cuda::Status::OK);
+					ASSERT_TRUE(std::equal(misses.begin(), misses.begin() + n - hits, expected_misses.begin()));
+					for (unsigned i = 0; i < n; ++i) {
+						if (flags[i]) ASSERT_EQ(std::memcmp(actual.data() + 1 + i * value_length,
+							expected.data() + i * value_length, value_length), 0);
+					}
+					// Public completion covers both the bound and the private stream.
+					ASSERT_EQ(cudaStreamQuery(stream), cudaSuccess);
+				}
+			}
+		}
+	}
+}
+
+TEST(SHDCuda, HostPipelineWithLargeOddValues) {
+	if (!HasCudaDevice()) GTEST_SKIP() << "CUDA device unavailable";
+	constexpr unsigned batch = 5003;
+	constexpr uint16_t value_length = 4097;
+	VectorWriter writer;
+	shd::DataReaders readers;
+	readers.push_back(std::make_unique<FixedValueReader>(value_length, 17));
+	ASSERT_EQ(shd::BuildDict(readers, writer), shd::BUILD_STATUS_OK);
+	auto cpu = MakeCpuTable(writer.bytes);
+	ASSERT_FALSE(!*cpu);
+	DeviceBuffer<uint8_t> pack;
+	ASSERT_EQ(pack.allocate(writer.bytes.size()), cudaSuccess);
+	ASSERT_EQ(cudaMemcpy(pack.get(), writer.bytes.data(), writer.bytes.size(),
+		cudaMemcpyHostToDevice), cudaSuccess);
+	shd::cuda::PerfectHashtable gpu(pack.get(), writer.bytes.size());
+	ASSERT_FALSE(!gpu);
+	std::vector<uint64_t> keys(batch);
+	for (unsigned i = 0; i < batch; ++i) keys[i] = i % 34U;
+	std::vector<uint8_t> expected(static_cast<size_t>(batch) * value_length), actual(expected.size());
+	std::vector<uint8_t> dft(value_length, 0xf3);
+	std::vector<unsigned> misses(batch), expected_misses(batch);
+	const auto* input = reinterpret_cast<const uint8_t*>(keys.data());
+	for (unsigned n : {batch, 31U, batch}) {
+		const unsigned hits = cpu->batch_fetch(n, input, expected.data(), dft.data());
+		ASSERT_EQ(gpu.batch_fetch(n, input, actual.data(), dft.data()), hits);
+		ASSERT_EQ(gpu.status(), shd::cuda::Status::OK);
+		ASSERT_EQ(std::memcmp(actual.data(), expected.data(), static_cast<size_t>(n) * value_length), 0);
+		ASSERT_EQ(cpu->batch_try_fetch(n, input, expected.data(), expected_misses.data()), hits);
+		std::fill(actual.begin(), actual.end(), 0xcc);
+		ASSERT_EQ(gpu.batch_try_fetch(n, input, actual.data(), misses.data()), hits);
+		ASSERT_EQ(gpu.status(), shd::cuda::Status::OK);
+		ASSERT_TRUE(std::equal(misses.begin(), misses.begin() + n - hits, expected_misses.begin()));
+		for (unsigned i = 0; i < n; ++i) {
+			if (keys[i] < 17U) ASSERT_EQ(std::memcmp(actual.data() + static_cast<size_t>(i) * value_length,
+				expected.data() + static_cast<size_t>(i) * value_length, value_length), 0);
+		}
+	}
+}
+
+TEST(SHDCuda, GrowingHostBatchesPreserveValuesAndMisses) {
+	if (!HasCudaDevice()) GTEST_SKIP() << "CUDA device unavailable";
+	constexpr unsigned capacity = 65537;
+	constexpr uint16_t value_length = 7;
+	VectorWriter writer;
+	shd::DataReaders readers;
+	readers.push_back(std::make_unique<FixedValueReader>(value_length, 1025));
+	ASSERT_EQ(shd::BuildDict(readers, writer), shd::BUILD_STATUS_OK);
+	auto cpu = MakeCpuTable(writer.bytes);
+	ASSERT_FALSE(!*cpu);
+	DeviceBuffer<uint8_t> pack;
+	ASSERT_EQ(pack.allocate(writer.bytes.size()), cudaSuccess);
+	ASSERT_EQ(cudaMemcpy(pack.get(), writer.bytes.data(), writer.bytes.size(),
+		cudaMemcpyHostToDevice), cudaSuccess);
+	shd::cuda::PerfectHashtable gpu(pack.get(), writer.bytes.size());
+	ASSERT_FALSE(!gpu);
+	std::vector<uint64_t> keys(capacity);
+	for (unsigned i = 0; i < capacity; ++i) keys[i] = i % 2048U;
+	std::vector<uint8_t> expected(capacity * value_length), actual(expected.size());
+	std::vector<uint8_t> dft(value_length, 0xd3);
+	std::vector<unsigned> misses(capacity), expected_misses(capacity);
+	const auto* input = reinterpret_cast<const uint8_t*>(keys.data());
+	for (unsigned n : {1U, 2U, 3U, 5U, 9U, 17U, 33U, 65U, 129U, 257U, 513U,
+		1025U, 2049U, 4097U, 8193U, 12289U, 16385U, 24577U, 32769U, 49153U, capacity, 31U}) {
+		SCOPED_TRACE(n);
+		const unsigned hits = cpu->batch_fetch(n, input, expected.data(), dft.data());
+		ASSERT_EQ(gpu.batch_fetch(n, input, actual.data(), dft.data()), hits);
+		ASSERT_EQ(gpu.status(), shd::cuda::Status::OK);
+		ASSERT_EQ(std::memcmp(actual.data(), expected.data(), n * value_length), 0);
+		ASSERT_EQ(cpu->batch_try_fetch(n, input, expected.data(), expected_misses.data()), hits);
+		std::fill(actual.begin(), actual.end(), 0xcc);
+		ASSERT_EQ(gpu.batch_try_fetch(n, input, actual.data(), misses.data()), hits);
+		ASSERT_EQ(gpu.status(), shd::cuda::Status::OK);
+		ASSERT_TRUE(std::equal(misses.begin(), misses.begin() + n - hits, expected_misses.begin()));
+		for (unsigned i = 0; i < n; ++i) {
+			if (keys[i] < 1025U) ASSERT_EQ(std::memcmp(actual.data() + i * value_length,
+				expected.data() + i * value_length, value_length), 0);
 		}
 	}
 }
